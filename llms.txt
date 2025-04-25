@@ -1,0 +1,1193 @@
+TITLE: Creating a Basic Svelte Component
+DESCRIPTION: Demonstrates the structure of a Svelte component with script, markup, and style sections. The component includes a button that triggers an alert when clicked.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_0
+
+LANGUAGE: svelte
+CODE:
+```
+<!file: App.svelte>
+<script>
+	function greet() {
+		alert('Welcome to Svelte!');
+	}
+</script>
+
+<button onclick={greet}>click me</button>
+
+<style>
+	button {
+		font-size: 2em;
+	}
+</style>
+```
+
+----------------------------------------
+
+TITLE: Using $state Rune for Reactive State
+DESCRIPTION: Shows how to create reactive state using the $state rune in Svelte 5. The example includes a button that increments a counter and updates the UI accordingly.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_4
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+	let count = $state(0);
+</script>
+
+<button onclick={() => count++}>
+	clicks: {count}
+</button>
+```
+
+----------------------------------------
+
+TITLE: Using Data Binding in Svelte 5
+DESCRIPTION: Data binding in Svelte allows data to flow upward from child to parent components. Supports various input types, group bindings, file inputs, and select elements with different binding patterns.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_15
+
+LANGUAGE: svelte
+CODE:
+```
+<input bind:value={value} />
+<input bind:value /> <!-- shorthand when names match -->
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<input bind:value={
+	() => value,
+	(v) => value = v.toLowerCase()}
+/>
+
+<!-- For readonly bindings -->
+<div
+	bind:clientWidth={null, redraw}
+	bind:clientHeight={null, redraw}
+>...</div>
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<!-- Text input -->
+<script>
+	let message = $state('hello');
+</script>
+<input bind:value={message} />
+
+<!-- Numeric input coerces to number -->
+<script>
+	let a = $state(1);
+	let b = $state(2);
+</script>
+<input type="number" bind:value={a} min="0" max="10" />
+<input type="range" bind:value={b} min="0" max="10" />
+
+<!-- Checkbox -->
+<input type="checkbox" bind:checked={accepted} />
+
+<!-- Form reset with defaultValue (v5.6.0+) -->
+<form>
+	<input bind:value defaultValue="not the empty string">
+	<input type="reset" value="Reset">
+</form>
+
+<!-- Checkbox with defaultChecked (v5.6.0+) -->
+<form>
+	<input type="checkbox" bind:checked defaultChecked={true}>
+	<input type="reset" value="Reset">
+</form>
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+	let tortilla = $state('Plain');
+	/** @type {Array<string>} */
+	let fillings = $state([]);
+</script>
+
+<!-- Radio buttons -->
+<input type="radio" bind:group={tortilla} value="Plain" />
+<input type="radio" bind:group={tortilla} value="Whole wheat" />
+
+<!-- Checkboxes -->
+<input type="checkbox" bind:group={fillings} value="Rice" />
+<input type="checkbox" bind:group={fillings} value="Beans" />
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+	let files = $state();
+
+	function clear() {
+		files = new DataTransfer().files; // null/undefined won't work
+	}
+</script>
+
+<input bind:files type="file" />
+<button onclick={clear}>clear</button>
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<!-- Single select -->
+<select bind:value={selected}>
+	<option value={a}>a</option>
+	<option value={b}>b</option>
+</select>
+
+<!-- Multiple select -->
+<select multiple bind:value={fillings}>
+	<option>Rice</option> <!-- value attribute can be omitted -->
+	<option>Beans</option>
+</select>
+
+<!-- Default selection -->
+<select bind:value={selected}>
+	<option value={a}>a</option>
+	<option value={b} selected>b</option>
+</select>
+```
+
+----------------------------------------
+
+TITLE: Setting Up a New Svelte Project
+DESCRIPTION: Shows how to create a new Svelte project using the command line. It includes steps for project initialization, dependency installation, and starting the development server.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_1
+
+LANGUAGE: bash
+CODE:
+```
+npx sv create myapp
+cd myapp
+npm install
+npm run dev
+```
+
+----------------------------------------
+
+TITLE: Svelte Component Structure
+DESCRIPTION: Illustrates the different sections of a Svelte component file, including the script, module script, and style sections. Each section serves a specific purpose in component definition.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_2
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+  // instance-level logic
+  // use runes for reactivity
+</script>
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<script module>
+  let total = 0;
+  // Can export bindings (except default)
+</script>
+
+<script>
+  total += 1;
+  console.log(`instantiated ${total} times`);
+</script>
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<style>
+  p {
+    /* only affects <p> in this component */
+    color: burlywood;
+  }
+</style>
+```
+
+----------------------------------------
+
+TITLE: Creating Reactive Class with $state
+DESCRIPTION: Demonstrates how to use $state in class fields to create reactive properties. The example shows a Todo class with reactive done and text properties.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_5
+
+LANGUAGE: javascript
+CODE:
+```
+class Todo {
+	done = $state(false);
+	text = $state();
+
+	constructor(text) {
+		this.text = text;
+	}
+
+	reset() {
+		this.text = '';
+		this.done = false;
+	}
+}
+```
+
+----------------------------------------
+
+TITLE: Typing Runes in Svelte 5
+DESCRIPTION: Demonstrates how to type runes in Svelte 5, including $props, generic $props, and $state.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_63
+
+LANGUAGE: svelte
+CODE:
+```
+<script lang="ts">
+	import type { Snippet } from 'svelte';
+
+	interface Props {
+		requiredProperty: number;
+		optionalProperty?: boolean;
+		snippetWithStringArgument: Snippet<[string]>;
+		eventHandler: (arg: string) => void;
+		[key: string]: unknown;
+	}
+
+	let {
+		requiredProperty,
+		optionalProperty,
+		snippetWithStringArgument,
+		eventHandler,
+		...everythingElse
+	}: Props = $props();
+</script>
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<script lang="ts" generics="Item extends { text: string }">
+	interface Props {
+		items: Item[];
+		select(item: Item): void;
+	}
+
+	let { items, select }: Props = $props();
+</script>
+```
+
+LANGUAGE: typescript
+CODE:
+```
+// With initial value
+let count: number = $state(0);
+
+// Without initial value (use casting if needed)
+let count = $state() as number;
+
+// In classes
+class Counter {
+	count = $state() as number;
+	constructor(initial: number) {
+		this.count = initial;
+	}
+}
+```
+
+----------------------------------------
+
+TITLE: Creating and Using Writable Stores in Svelte
+DESCRIPTION: Demonstrates how to create a writable store, subscribe to it, and update its value using the set and update methods.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_48
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+	import { writable } from 'svelte/store';
+
+	const count = writable(0);
+	console.log($count); // logs 0
+
+	count.set(1);
+	console.log($count); // logs 1
+
+	$count = 2;
+	console.log($count); // logs 2
+</script>
+```
+
+----------------------------------------
+
+TITLE: Using $effect Rune for Side Effects
+DESCRIPTION: Demonstrates how to use the $effect rune to perform side effects in response to state changes. The example updates a canvas based on size and color state changes.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_7
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+	let size = $state(50);
+	let color = $state('#ff3e00');
+	let canvas;
+
+	$effect(() => {
+		const context = canvas.getContext('2d');
+		context.clearRect(0, 0, canvas.width, canvas.height);
+
+		// this will re-run whenever `color` or `size` change
+		context.fillStyle = color;
+		context.fillRect(0, 0, size, size);
+	});
+</script>
+
+<canvas bind:this={canvas} width="100" height="100"></canvas>
+```
+
+----------------------------------------
+
+TITLE: Implementing Lifecycle Hooks in Svelte 5
+DESCRIPTION: Demonstrates the usage of onMount and onDestroy lifecycle hooks in Svelte 5 components.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_52
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+  import { onMount } from 'svelte';
+
+  onMount(() => {
+    console.log('the component has mounted');
+  });
+</script>
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+  import { onDestroy } from 'svelte';
+
+  onDestroy(() => {
+    console.log('the component is being destroyed');
+  });
+</script>
+```
+
+----------------------------------------
+
+TITLE: Using $derived Rune for Computed Values
+DESCRIPTION: Illustrates how to create derived values that update reactively based on their dependencies. The example shows a doubled value derived from a count state.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_6
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+	let count = $state(0);
+	let doubled = $derived(count * 2);
+</script>
+
+<button onclick={() => count++}>
+	{doubled}
+</button>
+
+<p>{count} doubled is {doubled}</p>
+```
+
+----------------------------------------
+
+TITLE: Using State in Svelte 5 with Runes
+DESCRIPTION: Shows how to create and use state with Svelte 5's runes feature, which is preferred for most use cases over stores.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_49
+
+LANGUAGE: typescript
+CODE:
+```
+/// file: state.svelte.js
+export const userState = $state({
+	name: 'name',
+	/* ... */
+});
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+	import { userState } from './state.svelte.js';
+</script>
+
+<p>User name: {userState.name}</p>
+<button onclick={() => {
+	userState.name = 'new name';
+}}>
+	change name
+</button>
+```
+
+----------------------------------------
+
+TITLE: Using Await Blocks in Svelte
+DESCRIPTION: Await blocks handle the three states of a Promise: pending, fulfilled, or rejected, with various simplified usage patterns for different scenarios.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_9
+
+LANGUAGE: svelte
+CODE:
+```
+{#await promise}
+	<p>waiting for the promise to resolve...</p>
+{:then value}
+	<p>The value is {value}</p>
+{:catch error}
+	<p>Something went wrong: {error.message}</p>
+{/await}
+```
+
+LANGUAGE: svelte
+CODE:
+```
+{#await promise}
+	<p>waiting for the promise to resolve...</p>
+{:then value}
+	<p>The value is {value}</p>
+{/await}
+```
+
+LANGUAGE: svelte
+CODE:
+```
+{#await promise then value}
+	<p>The value is {value}</p>
+{/await}
+```
+
+LANGUAGE: svelte
+CODE:
+```
+{#await promise catch error}
+	<p>The error is {error}</p>
+{/await}
+```
+
+LANGUAGE: svelte
+CODE:
+```
+{#await import('./Component.svelte') then { default: Component }}
+	<Component />
+{/await}
+```
+
+----------------------------------------
+
+TITLE: Creating Reactive State in Svelte.js Files
+DESCRIPTION: Demonstrates how to use runes for reactive state in .svelte.js files. This example creates a counter with an increment function that can be shared across the app.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_3
+
+LANGUAGE: javascript
+CODE:
+```
+// store.svelte.js
+export let $state count = 0;
+export const increment = () => count += 1;
+```
+
+----------------------------------------
+
+TITLE: Defining and Using Snippets in Svelte 5
+DESCRIPTION: Snippets create reusable markup chunks within components that can accept parameters and access the outer scope. They can be passed to other components explicitly or implicitly.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_10
+
+LANGUAGE: svelte
+CODE:
+```
+{#snippet name()}...{/snippet}
+{#snippet name(param1, param2, paramN)}...{/snippet}
+```
+
+LANGUAGE: svelte
+CODE:
+```
+{#snippet figure(image)}
+	<figure>
+		<img src={image.src} alt={image.caption} width={image.width} height={image.height} />
+		<figcaption>{image.caption}</figcaption>
+	</figure>
+{/snippet}
+
+{#each images as image}
+	{#if image.href}
+		<a href={image.href}>
+			{@render figure(image)}
+		</a>
+	{:else}
+		{@render figure(image)}
+	{/if}
+{/each}
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+	let { message = `it's great to see you!` } = $props();
+</script>
+
+{#snippet hello(name)}
+	<p>hello {name}! {message}!</p>
+{/snippet}
+
+{@render hello('alice')}
+{@render hello('bob')}
+```
+
+LANGUAGE: svelte
+CODE:
+```
+{#snippet countdown(n)}
+	{#if n > 0}
+		<span>{n}...</span>
+		{@render countdown(n - 1)}
+	{:else}
+		{@render blastoff()}
+	{/if}
+{/snippet}
+
+{#snippet blastoff()}
+	<span>🚀</span>
+{/snippet}
+
+{@render countdown(10)}
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+	import Table from './Table.svelte';
+
+	const fruits = [
+		{ name: 'apples', qty: 5, price: 2 },
+		{ name: 'bananas', qty: 10, price: 1 },
+		{ name: 'cherries', qty: 20, price: 0.5 }
+	];
+</script>
+
+{#snippet header()}
+	<th>fruit</th>
+	<th>qty</th>
+	<th>price</th>
+	<th>total</th>
+{/snippet}
+
+{#snippet row(d)}
+	<td>{d.name}</td>
+	<td>{d.qty}</td>
+	<td>{d.price}</td>
+	<td>{d.qty * d.price}</td>
+{/snippet}
+
+<Table data={fruits} {header} {row} />
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<Table data={fruits}>
+	{#snippet header()}
+		<th>fruit</th>
+		<th>qty</th>
+		<th>price</th>
+		<th>total</th>
+	{/snippet}
+
+	{#snippet row(d)}
+		<td>{d.name}</td>
+		<td>{d.qty}</td>
+		<td>{d.price}</td>
+		<td>{d.qty * d.price}</td>
+	{/snippet}
+</Table>
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<!-- App.svelte -->
+<Button>click me</Button>
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<!-- Button.svelte -->
+<script>
+	let { children } = $props();
+</script>
+
+<button>{@render children()}</button>
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+    let { children } = $props();
+</script>
+
+{@render children?.()}
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+    let { children } = $props();
+</script>
+
+{#if children}
+    {@render children()}
+{:else}
+    fallback content
+{/if}
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<script lang="ts">
+	import type { Snippet } from 'svelte';
+
+	interface Props {
+		data: any[];
+		children: Snippet;
+		row: Snippet<[any]>;
+	}
+
+	let { data, children, row }: Props = $props();
+</script>
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<script lang="ts" generics="T">
+	import type { Snippet } from 'svelte';
+
+	let {
+		data,
+		children,
+		row
+	}: {
+		data: T[];
+		children: Snippet;
+		row: Snippet<[T]>;
+	} = $props();
+</script>
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<script module>
+	export { add };
+</script>
+
+{#snippet add(a, b)}
+	{a} + {b} = {a + b}
+{/snippet}
+```
+
+----------------------------------------
+
+TITLE: Creating Readable Stores in Svelte
+DESCRIPTION: Demonstrates how to create a readable store with a start function that updates the store value periodically.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_50
+
+LANGUAGE: typescript
+CODE:
+```
+import { readable } from 'svelte/store';
+
+const time = readable(new Date(), (set) => {
+	set(new Date());
+
+	const interval = setInterval(() => {
+		set(new Date());
+	}, 1000);
+
+	return () => clearInterval(interval);
+});
+
+const ticktock = readable('tick', (set, update) => {
+	const interval = setInterval(() => {
+		update((sound) => (sound === 'tick' ? 'tock' : 'tick'));
+	}, 1000);
+
+	return () => clearInterval(interval);
+});
+```
+
+----------------------------------------
+
+TITLE: Wrapper Components in Svelte 5
+DESCRIPTION: Shows how to create wrapper components in Svelte 5 with TypeScript, including handling of HTML attributes and custom elements.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_65
+
+LANGUAGE: svelte
+CODE:
+```
+<script lang="ts">
+	import type { HTMLButtonAttributes } from 'svelte/elements';
+
+	let { children, ...rest }: HTMLButtonAttributes = $props();
+</script>
+
+<button {...rest}>
+	{@render children?.()}
+</button>
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<script lang="ts">
+	import type { SvelteHTMLElements } from 'svelte/elements';
+
+	let { children, ...rest }: SvelteHTMLElements['div'] = $props();
+</script>
+```
+
+----------------------------------------
+
+TITLE: Basic TypeScript Usage in Svelte 5
+DESCRIPTION: Demonstrates basic TypeScript usage in Svelte 5 components, including type annotations and event handling.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_61
+
+LANGUAGE: svelte
+CODE:
+```
+<script lang="ts">
+	let name: string = 'world';
+
+	function greet(name: string) {
+		alert(`Hello, ${name}!`);
+	}
+</script>
+
+<button onclick={(e: Event) => greet(e.target.innerText)}>
+	{name as string}
+</button>
+```
+
+----------------------------------------
+
+TITLE: Component Types in Svelte 5
+DESCRIPTION: Explains how to use component types in Svelte 5, including the Component type, ComponentProps, and component instances.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_64
+
+LANGUAGE: svelte
+CODE:
+```
+<script lang="ts">
+	import type { Component } from 'svelte';
+
+	interface Props {
+		DynamicComponent: Component<{ prop: string }>;
+	}
+
+	let { DynamicComponent }: Props = $props();
+</script>
+
+<DynamicComponent prop="foo" />
+```
+
+LANGUAGE: typescript
+CODE:
+```
+import type { Component, ComponentProps } from 'svelte';
+import MyComponent from './MyComponent.svelte';
+
+function withProps<TComponent extends Component<any>>(
+	component: TComponent,
+	props: ComponentProps<TComponent>
+) {}
+
+withProps(MyComponent, { foo: 'bar' });
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<script lang="ts">
+	import MyComponent from './MyComponent.svelte';
+
+	let componentConstructor: typeof MyComponent = MyComponent;
+	let componentInstance: MyComponent;
+</script>
+
+<MyComponent bind:this={componentInstance} />
+```
+
+----------------------------------------
+
+TITLE: Creating Custom CSS-based Transitions in Svelte
+DESCRIPTION: Demonstrates how to create a custom transition function that uses CSS for animation. The example preserves existing transforms while adding a scale effect.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_26
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+	import { elasticOut } from 'svelte/easing';
+
+	export let visible;
+
+	function whoosh(node, params) {
+		const existingTransform = getComputedStyle(node).transform.replace('none', '');
+
+		return {
+			delay: params.delay || 0,
+			duration: params.duration || 400,
+			easing: params.easing || elasticOut,
+			css: (t, u) => `transform: ${existingTransform} scale(${t})`
+		};
+	}
+</script>
+
+{#if visible}
+	<div in:whoosh>whooshes in</div>
+{/if}
+```
+
+----------------------------------------
+
+TITLE: Using Context in Svelte Components
+DESCRIPTION: Shows how to set and get context in Svelte components, allowing parent components to pass data to child components without prop drilling.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_51
+
+LANGUAGE: svelte
+CODE:
+```
+<!-- Parent.svelte -->
+<script>
+	import { setContext } from 'svelte';
+
+	setContext('my-context', 'hello from Parent.svelte');
+</script>
+```
+
+LANGUAGE: svelte
+CODE:
+```
+<!-- Child.svelte -->
+<script>
+	import { getContext } from 'svelte';
+
+	const message = getContext('my-context');
+</script>
+
+<h1>{message}, inside Child.svelte</h1>
+```
+
+----------------------------------------
+
+TITLE: Component Property Bindings in Svelte
+DESCRIPTION: Examples of creating bindable properties in components and using them in parent components. Shows how to create bindable props with optional default values.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_19
+
+LANGUAGE: svelte
+CODE:
+```
+<!-- Parent -->
+<Keypad bind:value={pin} />
+
+<!-- Child (Keypad.svelte) -->
+<script>
+	let { value = $bindable() } = $props();
+</script>
+
+<!-- With fallback -->
+<script>
+	let { bindableProperty = $bindable('fallback value') } = $props();
+</script>
+```
+
+----------------------------------------
+
+TITLE: Using bind:this with Elements and Components in Svelte
+DESCRIPTION: Demonstrates how to bind directly to DOM elements or component instances using bind:this. This allows direct access to elements for canvas manipulation or component method calls.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_18
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+	/** @type {HTMLCanvasElement} */
+	let canvas;
+
+	$effect(() => {
+		const ctx = canvas.getContext('2d');
+		drawStuff(ctx);
+	});
+</script>
+
+<canvas bind:this={canvas}></canvas>
+
+<!-- Component instances -->
+<ShoppingCart bind:this={cart} />
+<button onclick={() => cart.empty()}>Empty cart</button>
+```
+
+----------------------------------------
+
+TITLE: Scoped Styles in Svelte
+DESCRIPTION: Demonstrates Svelte's automatic style scoping within components using generated classes.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_46
+
+LANGUAGE: svelte
+CODE:
+```
+<style>
+	p {
+		/* this will only affect <p> elements in this component */
+		color: burlywood;
+	}
+</style>
+```
+
+----------------------------------------
+
+TITLE: Using the Imperative Component API in Svelte
+DESCRIPTION: Shows how to use the mount, unmount, and hydrate functions from Svelte's imperative component API for dynamic component handling.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_53
+
+LANGUAGE: javascript
+CODE:
+```
+import { mount } from 'svelte';
+import App from './App.svelte';
+
+const app = mount(App, {
+  target: document.querySelector('#app'),
+  props: { some: 'property' }
+});
+```
+
+LANGUAGE: javascript
+CODE:
+```
+import { mount, unmount } from 'svelte';
+import App from './App.svelte';
+
+const app = mount(App, { target: document.body });
+
+// later
+unmount(app, { outro: true });
+```
+
+LANGUAGE: javascript
+CODE:
+```
+import { hydrate } from 'svelte';
+import App from './App.svelte';
+
+const app = hydrate(App, {
+  target: document.querySelector('#app'),
+  props: { some: 'property' }
+});
+```
+
+----------------------------------------
+
+TITLE: Using @const Tag in Svelte
+DESCRIPTION: The @const tag defines a local constant within a block, allowing for derived calculations that are only executed once per iteration or condition.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_13
+
+LANGUAGE: svelte
+CODE:
+```
+{#each boxes as box}
+	{@const area = box.width * box.height}
+	{box.width} * {box.height} = {area}
+{/each}
+```
+
+----------------------------------------
+
+TITLE: Dynamic Styles with style: directive in Svelte
+DESCRIPTION: Shows how to bind dynamic values to CSS properties using the style: directive. This allows reactive styling based on component state.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_35
+
+LANGUAGE: svelte
+CODE:
+```
+<div style:color={myColor}>...</div>
+```
+
+----------------------------------------
+
+TITLE: TypeScript Setup in Svelte 5 with SvelteKit/Vite
+DESCRIPTION: Shows how to set up TypeScript in a Svelte 5 project using SvelteKit/Vite, including configuration for non-type-only features.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_62
+
+LANGUAGE: typescript
+CODE:
+```
+// svelte.config.js
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+const config = {
+	preprocess: vitePreprocess()
+};
+
+export default config;
+```
+
+LANGUAGE: typescript
+CODE:
+```
+// svelte.config.js
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+const config = {
+	preprocess: vitePreprocess({ script: true })
+};
+
+export default config;
+```
+
+LANGUAGE: json
+CODE:
+```
+{
+  "compilerOptions": {
+    "target": "ES2022", // or "ES2015" with "useDefineForClassFields": true
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true
+  }
+}
+```
+
+----------------------------------------
+
+TITLE: Implementing Actions with use: Directive in Svelte
+DESCRIPTION: Demonstrates how to create and use actions with the use: directive. Actions allow running code when an element is mounted and handling cleanup when unmounted.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_20
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+	/** @type {import('svelte/action').Action} */
+	function myaction(node) {
+		$effect(() => {
+			// setup code
+			return () => {
+				// cleanup code
+			};
+		});
+	}
+</script>
+
+<div use:myaction>...</div>
+```
+
+----------------------------------------
+
+TITLE: Typed Actions with Custom Events in Svelte
+DESCRIPTION: Example of creating a typed action with custom events in Svelte. Shows how to dispatch custom events from an action and properly type them with TypeScript.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_22
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+	/**
+	 * @type {import('svelte/action').Action<
+	 * 	HTMLDivElement,
+	 * 	undefined,
+	 * 	{
+	 * 		onswiperight: (e: CustomEvent) => void;
+	 * 		onswipeleft: (e: CustomEvent) => void;
+	 * 	}
+	 * >}
+	 */
+	function gestures(node) {
+		$effect(() => {
+			// ...
+			node.dispatchEvent(new CustomEvent('swipeleft'));
+			// ...
+			node.dispatchEvent(new CustomEvent('swiperight'));
+		});
+	}
+</script>
+
+<div
+	use:gestures
+	onswipeleft={next}
+	onswiperight={prev}
+>...</div>
+```
+
+----------------------------------------
+
+TITLE: Basic Transitions in Svelte
+DESCRIPTION: Demonstrates using transitions with the transition: directive in Svelte. Shows how elements can animate when entering or leaving the DOM based on state changes.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_23
+
+LANGUAGE: svelte
+CODE:
+```
+<script>
+	import { fade } from 'svelte/transition';
+	let visible = $state(false);
+</script>
+
+<button onclick={() => visible = !visible}>toggle</button>
+
+{#if visible}
+	<div transition:fade>fades in and out</div>
+{/if}
+```
+
+----------------------------------------
+
+TITLE: Extending DOM Types in Svelte 5
+DESCRIPTION: Demonstrates how to extend DOM types in Svelte 5 for custom elements and attributes, providing two alternative approaches.
+SOURCE: https://github.com/kspr9/svelte5forllms/blob/main/svelte-distilled.txt#2025-04-22_snippet_66
+
+LANGUAGE: typescript
+CODE:
+```
+// additional-svelte-typings.d.ts
+declare namespace svelteHTML {
+	interface IntrinsicElements {
+		'my-custom-element': { someattribute: string; 'on:event': (e: CustomEvent<any>) => void };
+	}
+	interface HTMLAttributes<T> {
+		onbeforeinstallprompt?: (event: any) => any;
+		mycustomattribute?: any;
+	}
+}
+```
+
+LANGUAGE: typescript
+CODE:
+```
+// additional-svelte-typings.d.ts
+import { HTMLButtonAttributes } from 'svelte/elements';
+
+declare module 'svelte/elements' {
+	export interface SvelteHTMLElements {
+		'custom-button': HTMLButtonAttributes;
+	}
+
+	export interface HTMLButtonAttributes {
+		veryexperimentalattribute?: string;
+	}
+}
+
+export {};
+```
