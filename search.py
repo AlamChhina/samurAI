@@ -48,12 +48,12 @@ if response.status_code == 200:
 
     # Print grouped matching <li> tags at the end
     if matching_16_inch:
-        print(f"The following <li> tags contain the word '{word}':")
-        print("\n16-inch MacBook:")
+        print(f"Found '{word}':")
+        print("\n16-inch MacBook:\n")
         for li in matching_16_inch:
-            print(f"- {li}")
+            print(f"{li}")
     else:
-        print(f"No <li> tags containing the word '{word}' were found on the webpage at {url}.")
+        print(f"\n'{word}' not in {url}.")
 else:
     print(f"Failed to retrieve the webpage. Status code: {response.status_code}")
 

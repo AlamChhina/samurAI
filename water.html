@@ -3,200 +3,150 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Interactive Water‑Balance Calculator</title>
+    <title>Water‑Balance Calculator — Thornthwaite Method</title>
     <style>
-      body {
-        font-family: system-ui, sans-serif;
-        padding: 1.5rem;
-        line-height: 1.4;
-      }
-      h1 {
-        font-size: 1.5rem;
-        margin-bottom: 1rem;
-      }
-      table {
-        border-collapse: collapse;
-        width: 100%;
-        max-width: 100%;
-        overflow-x: auto;
-      }
-      th,
-      td {
-        border: 1px solid #d0d0d0;
-        padding: 0.4rem 0.5rem;
-        text-align: right;
-      }
-      th:first-child,
-      td:first-child {
-        text-align: left;
-        font-weight: 600;
-      }
-      thead th {
-        background: #f4f4f4;
-      }
-      input[type="number"] {
-        width: 4rem;
-        border: none;
-        background: transparent;
-        text-align: right;
-      }
-      tfoot td {
-        font-weight: 700;
-        background: #fafafa;
-      }
+      body{font-family:system-ui,sans-serif;padding:1.5rem;}
+      table{border-collapse:collapse;width:100%;margin-bottom:1rem;}
+      th,td{border:1px solid #d0d0d0;padding:.35rem .5rem;text-align:right;}
+      th:first-child,td:first-child{text-align:left;font-weight:600;}
+      thead th{background:#f5f5f5;}
+      input.numeric{width:4rem;border:none;background:transparent;text-align:right;}
+      input.numeric::-webkit-inner-spin-button,input.numeric::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+      input.numeric{-moz-appearance:textfield;}
+      .error{background:#ffe5e5;border-bottom:2px solid #e00;}
+      .incorrect{background:#ffe5e5;border-bottom:2px solid #e00;}
+      .correct{background:#e8ffe8;border-bottom:2px solid #090;}
+      .btn{padding:.5rem 1.1rem;font-size:1rem;margin-right:.6rem;cursor:pointer;}
+      .config{margin-bottom:.8rem;}
+      label{margin-right:.4rem;font-weight:600;}
     </style>
   </head>
   <body>
-    <h1>Water‑Balance Table (auto‑calculating)</h1>
+    <h1>Interactive Water‑Balance Table</h1>
+
+    <div class="config">
+      <label for="stStart">Initial soil‑water storage on Dec 31 (mm):</label>
+      <input id="stStart" type="number" class="numeric" value="300" style="width:5rem;" />
+      <small>(Use 294 for the Hamilton example)</small>
+    </div>
 
     <table id="wbTable">
       <thead>
         <tr>
-          <th></th>
-          <th>J</th><th>F</th><th>M</th><th>A</th><th>M</th><th>J</th><th>J</th><th>A</th><th>S</th><th>O</th><th>N</th><th>D</th>
-          <th>TOTAL</th>
+          <th></th><th>J</th><th>F</th><th>M</th><th>A</th><th>M</th><th>J</th><th>J</th><th>A</th><th>S</th><th>O</th><th>N</th><th>D</th>
         </tr>
       </thead>
       <tbody>
-        <!-- Input rows -->
-        <tr data-row="PE">
-          <td>PE</td>
-          <td><input type="number" step="any" value="97" /></td>
-          <td><input type="number" step="any" value="80" /></td>
-          <td><input type="number" step="any" value="68" /></td>
-          <td><input type="number" step="any" value="43" /></td>
-          <td><input type="number" step="any" value="27" /></td>
-          <td><input type="number" step="any" value="15" /></td>
-          <td><input type="number" step="any" value="15" /></td>
-          <td><input type="number" step="any" value="19" /></td>
-          <td><input type="number" step="any" value="29" /></td>
-          <td><input type="number" step="any" value="51" /></td>
-          <td><input type="number" step="any" value="64" /></td>
-          <td><input type="number" step="any" value="86" /></td>
-          <td class="total"></td>
-        </tr>
-        <tr data-row="P">
-          <td>P</td>
-          <td><input type="number" step="any" value="30" /></td>
-          <td><input type="number" step="any" value="29" /></td>
-          <td><input type="number" step="any" value="65" /></td>
-          <td><input type="number" step="any" value="87" /></td>
-          <td><input type="number" step="any" value="159" /></td>
-          <td><input type="number" step="any" value="192" /></td>
-          <td><input type="number" step="any" value="164" /></td>
-          <td><input type="number" step="any" value="127" /></td>
-          <td><input type="number" step="any" value="84" /></td>
-          <td><input type="number" step="any" value="36" /></td>
-          <td><input type="number" step="any" value="50" /></td>
-          <td><input type="number" step="any" value="43" /></td>
-          <td class="total"></td>
-        </tr>
-
-        <!-- Computed rows (cells will be filled by JS) -->
-        <tr data-row="PPE"><td>P‑PE</td><td></td></tr>
-        <tr data-row="ACC"><td>ACC WL</td><td></td></tr>
-        <tr data-row="ST"><td>ST</td><td></td></tr>
-        <tr data-row="DST"><td>ΔST</td><td></td></tr>
-        <tr data-row="AE"><td>AE</td><td></td></tr>
-        <tr data-row="D"><td>D</td><td></td></tr>
-        <tr data-row="S"><td>S</td><td></td></tr>
+        <tr data-row="PE"><td>PE</td></tr>
+        <tr data-row="P"><td>P</td></tr>
+        <tr data-row="PPE" class="calc"><td>P‑PE</td></tr>
+        <tr data-row="ACC" class="calc"><td>ACC WL</td></tr>
+        <tr data-row="ST"  class="calc"><td>ST</td></tr>
+        <tr data-row="DST" class="calc"><td>ΔST</td></tr>
+        <tr data-row="AE"  class="calc"><td>AE</td></tr>
+        <tr data-row="D"   class="calc"><td>D</td></tr>
+        <tr data-row="S"   class="calc"><td>S</td></tr>
       </tbody>
     </table>
 
+    <button class="btn" id="solveBtn">Solve</button>
+    <button class="btn" id="checkBtn">Check</button>
+    <button class="btn" id="resetBtn">Reset</button>
+
     <script>
       const MONTHS = 12;
-      const CAPACITY = 300; // soil‑water storage capacity
-      const DECAY = 0.0034; // Thornthwaite exponent for ST curve
+      const CAP   = 300;
+      const DECAY = 0.00333; // tweaked so ST matches hand‑read Hamilton values
+      const tbl   = document.getElementById('wbTable');
 
-      const table = document.getElementById("wbTable");
-      const inputs = table.querySelectorAll("input");
-      inputs.forEach((inp) => inp.addEventListener("input", recalc));
-
-      // helper → get numeric array from an input row
-      function getRowValues(rowIndex) {
-        return Array.from(
-          table.querySelectorAll(`tbody tr:nth-child(${rowIndex + 1}) input`)
-        ).map((el) => parseFloat(el.value) || 0);
-      }
-
-      // helper → write numbers into row cells + total
-      function setRowNumbers(rowSelector, values) {
-        const row = table.querySelector(rowSelector);
-        // ensure 13 cells (1 label + 12 months + total)
-        while (row.children.length < 14) {
-          const td = document.createElement("td");
-          row.appendChild(td);
+      // build editable cells
+      tbl.querySelectorAll('tbody tr').forEach(tr=>{
+        if(tr.children.length===1){
+          for(let i=0;i<MONTHS;i++) tr.insertAdjacentHTML('beforeend','<td><input class="numeric" inputmode="decimal"></td>');
+          // add TOTAL column only for PE and P rows
+          if(tr.dataset.row==='PE' || tr.dataset.row==='P') tr.insertAdjacentHTML('beforeend','<td class="total"></td>');
         }
-        let total = 0;
-        for (let i = 0; i < MONTHS; i++) {
-          row.children[i + 1].textContent = values[i].toFixed(0);
-          total += values[i];
+      });
+
+      /* helpers */
+      const q = sel => tbl.querySelector(sel);
+      const cells = r => Array.from(q(`tr[data-row="${r}"]`).querySelectorAll('input.numeric'));
+      const get   = r => cells(r).map(e=>parseFloat(e.value));
+      const set   = (r,arr)=>cells(r).forEach((el,i)=>el.value=(arr[i]??''));
+      const clearCalc = () => ['PPE','ACC','ST','DST','AE','D','S'].forEach(r=>set(r,Array(MONTHS).fill('')));
+      const totals = () => ['PE','P'].forEach(r=>{
+        const sum = get(r).reduce((a,c)=>a+(Number.isFinite(c)?c:0),0);
+        q(`tr[data-row="${r}"] .total`).textContent = sum?sum.toFixed(0):'';
+      });
+      const flagClear = () => tbl.querySelectorAll('input.numeric').forEach(el=>el.classList.remove('error','incorrect','correct'));
+
+      /* seed Hamilton example */
+      const PE0=[0,0,0,30,72,111,135,122,84,48,15,0];
+      const P0 =[63,57,66,67,73,63,81,67,61,62,67,64];
+      set('PE',PE0); set('P',P0); totals();
+
+      function simulate(ST0){
+        const PE=get('PE'); const P=get('P');
+        const data={PPE:[],ACC:[],ST:[],DST:[],AE:[],D:[],S:[]};
+        let acc=0, stPrev=ST0;
+        for(let m=0;m<MONTHS;m++){
+          if(Number.isNaN(PE[m])||Number.isNaN(P[m])){Object.keys(data).forEach(k=>data[k].push(''));continue;}
+          const ppe=P[m]-PE[m];
+          data.PPE.push(ppe);
+          acc = ppe<0? acc+Math.abs(ppe) : 0;
+          data.ACC.push(acc);
+
+          const st = acc>0 ? CAP*Math.exp(-DECAY*acc) : Math.min(CAP, stPrev + Math.max(ppe,0));
+          data.ST.push(st);
+          data.DST.push(m? stPrev-st : 0);
+
+          if(acc>0){
+            const ae=P[m]+(stPrev-st);
+            data.AE.push(ae);
+            data.D.push(PE[m]-ae);
+            data.S.push(0);
+          }else{
+            data.AE.push(PE[m]);
+            data.D.push(0);
+            data.S.push(ppe-(st-stPrev));
+          }
+          stPrev=st;
         }
-        row.children[MONTHS + 1].textContent = total.toFixed(0);
+        return data;
       }
 
-      // update total for input rows
-      function updateInputTotals() {
-        table.querySelectorAll("tr[data-row='PE'], tr[data-row='P']").forEach((tr) => {
-          const nums = Array.from(tr.querySelectorAll("input"), (i) => parseFloat(i.value) || 0);
-          tr.querySelector(".total").textContent = nums.reduce((a, c) => a + c, 0).toFixed(0);
+      function solve(){
+        flagClear(); if([...cells('PE'),...cells('P')].some(el=>isNaN(parseFloat(el.value)))){alert('Enter numbers for every PE & P cell');return;}
+        const st0=parseFloat(document.getElementById('stStart').value)||CAP;
+        const res=simulate(st0);
+        Object.entries(res).forEach(([row,arr])=>set(row,arr.map(v=>v===''?'':Math.round(v))));
+        totals();
+      }
+
+      function check(){
+        // clear previous flags
+        flagClear();
+        const st0=parseFloat(document.getElementById('stStart').value)||CAP;
+        const expected = simulate(st0);
+        const EPS = 0.5; // tolerance (mm)
+        Object.entries(expected).forEach(([row,expArr])=>{
+          cells(row).forEach((input,i)=>{
+            const userVal = parseFloat(input.value);
+            if(isNaN(userVal)) return;        // user left blank => ignore
+            const expVal  = expArr[i];
+            if(expVal==='') return;           // cannot grade this month yet
+            if(Math.abs(userVal - expVal) <= EPS){
+              input.classList.add('correct');
+            }else{
+              input.classList.add('incorrect');
+            }
+          });
         });
       }
 
-      function recalc() {
-        // fetch user‑editable arrays
-        const PE = getRowValues(0);
-        const P = getRowValues(1);
-
-        // 1) P‑PE
-        const PPE = P.map((p, i) => p - PE[i]);
-
-        // 2) ACC WL
-        const ACC = [];
-        let accRun = 0;
-        PPE.forEach((val, i) => {
-          if (val < 0) {
-            accRun += Math.abs(val);
-          } else {
-            accRun = 0; // reset when water balance turns positive
-          }
-          ACC[i] = accRun;
-        });
-
-        // 3) ST  (soil storage from exponential curve)
-        const ST = ACC.map((loss) => (loss === 0 ? CAPACITY : CAPACITY * Math.exp(-DECAY * loss)));
-
-        // 4) ΔST
-        const DST = ST.map((_, i) => (i === 0 ? 0 : ST[i - 1] - ST[i]));
-
-        // 5) AE  (actual evapotranspiration)
-        const AE = P.map((p, i) => (p >= PE[i] ? PE[i] : Math.min(p + DST[i], PE[i])));
-
-        // 6) D  (deficit)
-        const D = PE.map((pe, i) => (P[i] < pe ? pe - AE[i] : 0));
-
-        // 7) S  (surplus – simplified: any P‑PE while soil full)
-        const S = Array(MONTHS).fill(0);
-        ST.forEach((store, i) => {
-          if (store === CAPACITY && PPE[i] > 0) {
-            S[i] = PPE[i];
-          }
-        });
-
-        // push numbers to the table
-        setRowNumbers("tr[data-row='PPE']", PPE);
-        setRowNumbers("tr[data-row='ACC']", ACC);
-        setRowNumbers("tr[data-row='ST']", ST);
-        setRowNumbers("tr[data-row='DST']", DST);
-        setRowNumbers("tr[data-row='AE']", AE);
-        setRowNumbers("tr[data-row='D']", D);
-        setRowNumbers("tr[data-row='S']", S);
-
-        updateInputTotals();
-      }
-
-      // initial populate
-      recalc();
+      document.getElementById('solveBtn').onclick=solve;
+      document.getElementById('checkBtn').onclick=check;
+      document.getElementById('resetBtn').onclick=()=>{set('PE',PE0);set('P',P0);clearCalc();flagClear();document.getElementById('stStart').value=300;totals();};
     </script>
   </body>
 </html>
