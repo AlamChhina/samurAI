@@ -16,6 +16,7 @@ import re
 import sys
 import textwrap
 from urllib.request import urlopen
+import argparse
 
 SRC_URL = "https://context7.com/sveltejs/svelte/llms.txt"
 OUT_FILE = "svelte.html"
@@ -70,7 +71,7 @@ def html_doc(blocks):
         <html lang="en">
         <head>
           <meta charset="utf-8"/>
-          <title>Svelte LLMS snippets</title>
+          <title>LLMS snippets</title>
 
           <link rel="stylesheet"
             href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
@@ -151,9 +152,9 @@ def html_doc(blocks):
 
 
 # ───────────────────────── main ───────────────────────────────────────────────
-def main(out: pathlib.Path):
-    print(f"Downloading {SRC_URL} …")
-    txt = fetch_text(SRC_URL)
+def main(src_url: str, out: pathlib.Path):
+    print(f"Downloading {src_url} …")
+    txt = fetch_text(src_url)
     blocks = list(parse_blocks(txt))
     print(f"Parsed {len(blocks)} snippet{'s' if len(blocks)!=1 else ''}.")
     out.write_text("\n".join(html_doc(blocks)), encoding="utf-8")
@@ -161,5 +162,9 @@ def main(out: pathlib.Path):
 
 
 if __name__ == "__main__":
-    dst = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else OUT_FILE)
-    main(dst)
+    parser = argparse.ArgumentParser(description="Convert LLMS snippets to HTML.")
+    parser.add_argument("--src", default=SRC_URL, help="Source URL for the snippets")
+    parser.add_argument("--out", default=OUT_FILE, help="Output HTML file")
+    args = parser.parse_args()
+
+    main(args.src, pathlib.Path(args.out))
