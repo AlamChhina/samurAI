@@ -71,7 +71,7 @@ def html_doc(blocks):
         <html lang="en">
         <head>
           <meta charset="utf-8"/>
-          <title>LLMS snippets</title>
+          <title>Bite Sized snippets</title>
 
           <link rel="stylesheet"
             href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
@@ -111,7 +111,7 @@ def html_doc(blocks):
           </script>
         </head>
         <body>
-        <h1>Svelte LLMS snippets</h1>
+        <h1>Bite Sized snippets</h1>
         """
     )
 
