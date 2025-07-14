@@ -4,18 +4,27 @@ import requests
 import time
 from playwright.async_api import async_playwright
 
-def geocode(address):
-    """Geocode using OpenStreetMap Nominatim API."""
-    url = 'https://nominatim.openstreetmap.org/search'
-    params = {
-        'q': address + ', Hamilton, ON',
-        'format': 'json',
-        'limit': 1
+APPLE_MAPS_JWT = "YOUR_APPLE_MAPS_JWT"  # Replace with your JWT
+
+def geocode_apple_maps(address):
+    """Geocode using Apple Maps Server API."""
+    url = "https://maps-api.apple.com/v1/geocode"
+    headers = {
+        "Authorization": f"Bearer {APPLE_MAPS_JWT}"
     }
-    response = requests.get(url, params=params, headers={'User-Agent': 'Mozilla/5.0'})
-    data = response.json()
-    if data:
-        return {"lat": float(data[0]['lat']), "lon": float(data[0]['lon'])}
+    params = {
+        "q": address + ", Hamilton, ON",
+        "limit": 1,
+        "lang": "en"
+    }
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        data = response.json()
+        # Apple Maps API returns results in 'results', each with 'coordinate'
+        results = data.get("results", [])
+        if results and "coordinate" in results[0]:
+            coord = results[0]["coordinate"]
+            return {"lat": coord["latitude"], "lon": coord["longitude"]}
     return None
 
 async def scrape_hoodq():
@@ -32,6 +41,18 @@ async def scrape_hoodq():
         page = await browser.new_page()
         await page.goto("https://www.hoodq.com/explore/hamilton-on/ainslie-wood")
         await page.wait_for_timeout(5000)  # Wait for JS to load
+
+        # Grab text from all key insights divs
+        key_insights_divs = await page.query_selector_all('div[class*="hqtw-flex"][class*="hqtw-flex-col"][class*="hqtw-w-full"][class*="hqtw-gap-"]')
+        insights = []
+        for div in key_insights_divs:
+            # Get the heading (span) and the paragraph (p)
+            heading = await div.query_selector('span.hqtw-uppercase')
+            heading_text = await heading.inner_text() if heading else None
+            p = await div.query_selector('p.hqtw-text-black')
+            p_text = await p.inner_text() if p else None
+            if heading_text and p_text:
+                insights.append({"title": heading_text.strip(), "text": p_text.strip()})
 
         for section_title, category in categories.items():
             try:
@@ -54,17 +75,17 @@ async def scrape_hoodq():
                 continue
 
         await browser.close()
-    return schools
+    return schools, insights
 
 async def main():
-    schools = await scrape_hoodq()
+    schools, insights = await scrape_hoodq()
     for school in schools:
-        geo = geocode(school["name"])
+        geo = geocode_apple_maps(school["name"])
         time.sleep(1)  # Be polite to the API
         school["geo_location"] = geo
 
     # Output as JSON
-    json_output = json.dumps(schools, indent=2)
+    json_output = json.dumps({"schools": schools, "insights": insights}, indent=2)
     print(json_output)
 
     # Optionally, save to file
