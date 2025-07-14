@@ -33,24 +33,73 @@
         <!-- Upload Section -->
         <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
             <h2 class="text-2xl font-semibold mb-4 text-gray-800">
-                <i class="fas fa-cloud-upload-alt text-blue-600 mr-2"></i>Upload Video
+                <i class="fas fa-cloud-upload-alt text-blue-600 mr-2"></i>Process Video
             </h2>
             
-            <div id="upload-area" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer">
-                <i class="fas fa-file-video text-4xl text-gray-400 mb-4"></i>
-                <p class="text-gray-600 mb-2">Click to select or drag and drop your video file</p>
-                <p class="text-sm text-gray-500">Supports MP4, MOV, AVI, MKV, WebM and more</p>
-                <input type="file" id="video-file" accept="video/*" class="hidden">
+            <!-- Tab Navigation -->
+            <div class="flex space-x-4 mb-6 border-b border-gray-200">
+                <button id="youtube-tab" onclick="switchTab('youtube')" class="pb-2 px-1 text-red-600 border-b-2 border-red-600 font-medium">
+                    <i class="fab fa-youtube mr-1"></i>YouTube URL
+                </button>
+                <button id="file-tab" onclick="switchTab('file')" class="pb-2 px-1 text-gray-500 hover:text-gray-700 font-medium">
+                    <i class="fas fa-file-video mr-1"></i>Upload File
+                </button>
             </div>
             
-            <div id="upload-progress" class="hidden mt-4">
-                <div class="bg-blue-50 rounded-lg p-4">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-sm font-medium text-blue-700">Uploading...</span>
-                        <span id="progress-text" class="text-sm text-blue-600">0%</span>
+            <!-- YouTube URL Tab (Default) -->
+            <div id="youtube-url-section">
+                <div class="space-y-4">
+                    <div>
+                        <label for="youtube-url" class="block text-sm font-medium text-gray-700 mb-2">
+                            YouTube Video URL
+                        </label>
+                        <div class="flex space-x-3">
+                            <input type="url" id="youtube-url" placeholder="https://www.youtube.com/watch?v=..." 
+                                   class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-red-500 focus:border-transparent">
+                            <button onclick="processYouTubeURL()" id="youtube-submit-btn"
+                                    class="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center">
+                                <i class="fab fa-youtube mr-2"></i>Process
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">
+                            Supports YouTube, YouTube Music, and YouTube Shorts URLs
+                        </p>
                     </div>
-                    <div class="w-full bg-blue-200 rounded-full h-2">
-                        <div id="progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    
+                    <div id="youtube-progress" class="hidden">
+                        <div class="bg-red-50 rounded-lg p-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-medium text-red-700">
+                                    <i class="fas fa-download mr-1"></i>Downloading from YouTube...
+                                </span>
+                                <span class="text-sm text-red-600">Please wait</span>
+                            </div>
+                            <div class="w-full bg-red-200 rounded-full h-2">
+                                <div class="bg-red-600 h-2 rounded-full animate-pulse"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- File Upload Tab -->
+            <div id="file-upload-section" class="hidden">
+                <div id="upload-area" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer">
+                    <i class="fas fa-file-video text-4xl text-gray-400 mb-4"></i>
+                    <p class="text-gray-600 mb-2">Click to select or drag and drop your video file</p>
+                    <p class="text-sm text-gray-500">Supports MP4, MOV, AVI, MKV, WebM and more</p>
+                    <input type="file" id="video-file" accept="video/*" class="hidden">
+                </div>
+                
+                <div id="upload-progress" class="hidden mt-4">
+                    <div class="bg-blue-50 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-blue-700">Uploading...</span>
+                            <span id="progress-text" class="text-sm text-blue-600">0%</span>
+                        </div>
+                        <div class="w-full bg-blue-200 rounded-full h-2">
+                            <div id="progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -133,9 +182,9 @@
                     </div>
                 {% else %}
                     <div class="text-center py-12">
-                        <i class="fas fa-inbox text-6xl text-gray-300 mb-4"></i>
+                        <i class="fab fa-youtube text-6xl text-red-300 mb-4"></i>
                         <h3 class="text-xl font-semibold text-gray-500 mb-2">No jobs yet</h3>
-                        <p class="text-gray-400">Upload a video to get started</p>
+                        <p class="text-gray-400">Enter a YouTube URL to get started</p>
                     </div>
                 {% endif %}
             </div>
@@ -269,6 +318,90 @@
                 fileInput.value = '';
             }
         }
+
+        // Tab switching functionality
+        function switchTab(tabName) {
+            const fileTab = document.getElementById('file-tab');
+            const youtubeTab = document.getElementById('youtube-tab');
+            const fileSection = document.getElementById('file-upload-section');
+            const youtubeSection = document.getElementById('youtube-url-section');
+
+            if (tabName === 'file') {
+                fileTab.classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
+                fileTab.classList.remove('text-gray-500');
+                youtubeTab.classList.add('text-gray-500');
+                youtubeTab.classList.remove('text-red-600', 'border-b-2', 'border-red-600');
+                
+                fileSection.classList.remove('hidden');
+                youtubeSection.classList.add('hidden');
+            } else if (tabName === 'youtube') {
+                youtubeTab.classList.add('text-red-600', 'border-b-2', 'border-red-600');
+                youtubeTab.classList.remove('text-gray-500');
+                fileTab.classList.add('text-gray-500');
+                fileTab.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
+                
+                youtubeSection.classList.remove('hidden');
+                fileSection.classList.add('hidden');
+            }
+        }
+
+        // YouTube URL processing
+        async function processYouTubeURL() {
+            const youtubeUrl = document.getElementById('youtube-url').value.trim();
+            const youtubeProgress = document.getElementById('youtube-progress');
+            const submitBtn = document.getElementById('youtube-submit-btn');
+
+            if (!youtubeUrl) {
+                alert('Please enter a YouTube URL');
+                return;
+            }
+
+            // Validate YouTube URL format
+            const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)\/.+/;
+            if (!youtubeRegex.test(youtubeUrl)) {
+                alert('Please enter a valid YouTube URL');
+                return;
+            }
+
+            youtubeProgress.classList.remove('hidden');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processing...';
+
+            try {
+                const response = await axios.post('/api/process-youtube/', {
+                    url: youtubeUrl
+                }, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer {{ user.email }}`
+                    }
+                });
+
+                if (response.data.job_id) {
+                    alert('YouTube video processing started! This may take several minutes.');
+                    document.getElementById('youtube-url').value = '';
+                    setTimeout(refreshJobs, 1000);
+                }
+            } catch (error) {
+                alert('YouTube processing failed: ' + (error.response?.data?.detail || error.message));
+            } finally {
+                youtubeProgress.classList.add('hidden');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fab fa-youtube mr-2"></i>Process';
+            }
+        }
+
+        // Allow Enter key to submit YouTube URL
+        document.addEventListener('DOMContentLoaded', () => {
+            const youtubeInput = document.getElementById('youtube-url');
+            if (youtubeInput) {
+                youtubeInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        processYouTubeURL();
+                    }
+                });
+            }
+        });
 
         async function refreshJobs() {
             try {

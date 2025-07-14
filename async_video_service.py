@@ -23,6 +23,33 @@ import httpx
 import jwt
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import yt_dlp
+import re
+
+# Python 3.13 compatibility for audio modules
+try:
+    import aifc
+except ImportError:
+    try:
+        import standard_aifc as aifc
+    except ImportError:
+        aifc = None
+
+try:
+    import chunk
+except ImportError:
+    try:
+        import standard_chunk as chunk
+    except ImportError:
+        chunk = None
+
+try:
+    import sunau
+except ImportError:
+    try:
+        import standard_sunau as sunau
+    except ImportError:
+        sunau = None
 
 # Load environment variables
 load_dotenv()
@@ -99,6 +126,9 @@ class JobResponse(BaseModel):
     transcript_file: Optional[str] = None
     speech_file: Optional[str] = None
 
+class YouTubeRequest(BaseModel):
+    url: str
+
 def load_model():
     """Load Whisper model and processor (cached)"""
     global processor, model
@@ -138,6 +168,70 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)):
         return user
     except Exception:
         return None
+
+def is_valid_youtube_url(url: str) -> bool:
+    """Validate if the URL is a valid YouTube URL"""
+    youtube_patterns = [
+        r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/',
+        r'(https?://)?youtu\.be/',
+        r'(https?://)?(www\.)?youtube\.com/watch\?v=',
+        r'(https?://)?(www\.)?youtube\.com/embed/',
+        r'(https?://)?(www\.)?youtube\.com/v/',
+    ]
+    
+    for pattern in youtube_patterns:
+        if re.search(pattern, url, re.IGNORECASE):
+            return True
+    return False
+
+async def download_youtube_video(url: str) -> Optional[tuple[str, str]]:
+    """Download YouTube video and return the local file path"""
+    try:
+        def _download():
+            # Create temporary filename
+            temp_filename = f"temp_youtube_{uuid.uuid4().hex}"
+            
+            # yt-dlp options for best quality video with audio
+            ydl_opts = {
+                'format': 'best[ext=mp4]/best',  # Prefer mp4, fallback to best available
+                'outtmpl': f'{temp_filename}.%(ext)s',
+                'quiet': False,  # Set to True to suppress output
+                'no_warnings': False,
+                'extractaudio': False,  # We want video with audio
+                'audioformat': 'mp3',
+                'embed_subs': False,
+                'writesubtitles': False,
+                'writeautomaticsub': False,
+            }
+            
+            print(f"Downloading YouTube video: {url}")
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # Extract info to get the title and filename
+                info = ydl.extract_info(url, download=False)
+                title = info.get('title', 'Unknown')
+                print(f"Video title: {title}")
+                
+                # Download the video
+                ydl.download([url])
+                
+                # Find the downloaded file (yt-dlp may change the extension)
+                import glob
+                downloaded_files = glob.glob(f"{temp_filename}.*")
+                
+                if downloaded_files:
+                    downloaded_file = downloaded_files[0]
+                    print(f"Downloaded: {downloaded_file}")
+                    return downloaded_file, title
+                else:
+                    print("No file was downloaded")
+                    return None, None
+        
+        result = await asyncio.to_thread(_download)
+        return result
+    except Exception as e:
+        print(f"Error downloading YouTube video: {str(e)}")
+        return None, None
 
 async def extract_audio_from_video(video_path: str) -> Optional[str]:
     """Extract audio from video file and save as temporary WAV file"""
@@ -398,6 +492,75 @@ async def process_video_background(job_id: str, video_path: str, filename: str, 
         if os.path.exists(video_path):
             os.remove(video_path)
 
+async def process_youtube_background(job_id: str, youtube_url: str, db: Session):
+    """Background task to process YouTube video"""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    video_path = None
+    
+    try:
+        # Update status to processing
+        job.status = "processing"
+        db.commit()
+        
+        # Download YouTube video
+        download_result = await download_youtube_video(youtube_url)
+        if not download_result:
+            raise RuntimeError("Failed to download YouTube video")
+        
+        video_path, video_title = download_result
+        
+        # Update job filename with actual video title
+        job.filename = f"YouTube: {video_title}"
+        db.commit()
+        
+        # Extract audio
+        audio_path = await extract_audio_from_video(video_path)
+        if not audio_path:
+            raise RuntimeError("Failed to extract audio")
+        
+        # Transcribe audio
+        transcription = await transcribe_audio(audio_path)
+        if not transcription:
+            raise RuntimeError("Failed to transcribe audio")
+        
+        # Save transcription
+        safe_title = re.sub(r'[^\w\s-]', '', video_title).strip()[:50]  # Safe filename
+        transcript_filename = f"{safe_title}_{job_id}_transcript.txt"
+        transcript_path = TRANSCRIPTS_DIR / transcript_filename
+        
+        async with aiofiles.open(transcript_path, 'w') as f:
+            await f.write(transcription)
+        
+        # Generate speech
+        speech_filename = f"{safe_title}_{job_id}_speech.mp3"
+        speech_path = SPEECH_DIR / speech_filename
+        success = await text_to_speech(transcription, str(speech_path))
+        
+        if not success:
+            raise RuntimeError("Failed to generate speech")
+        
+        # Update job with results
+        job.status = "completed"
+        job.transcription = transcription
+        job.transcript_file = transcript_filename
+        job.speech_file = speech_filename
+        job.completed_at = datetime.now(timezone.utc)
+        db.commit()
+        
+        # Clean up
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+        
+    except Exception as e:
+        job.status = "failed"
+        job.error_message = str(e)
+        db.commit()
+    
+    finally:
+        # Clean up video file
+        if video_path and os.path.exists(video_path):
+            os.remove(video_path)
+
 # Custom exceptions
 class VideoProcessingError(Exception):
     """Custom exception for video processing errors"""
@@ -537,6 +700,36 @@ async def process_video(
     background_tasks.add_task(process_video_background, job.id, video_path, file.filename, db)
     
     return {"job_id": job.id, "status": "pending", "message": "Video processing started"}
+
+@app.post("/api/process-youtube/")
+async def process_youtube(
+    background_tasks: BackgroundTasks,
+    request: YouTubeRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Process YouTube video from URL"""
+    if not user:
+        raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    # Validate YouTube URL
+    if not is_valid_youtube_url(request.url):
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+    
+    # Create job with URL as filename initially
+    job = Job(
+        user_id=user.id,
+        filename=f"YouTube: {request.url}",
+        status="pending"
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    
+    # Start background processing for YouTube
+    background_tasks.add_task(process_youtube_background, job.id, request.url, db)
+    
+    return {"job_id": job.id, "status": "pending", "message": "YouTube video processing started"}
 
 @app.get("/api/jobs/", response_model=list[JobResponse])
 async def get_user_jobs(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
