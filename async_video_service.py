@@ -25,6 +25,8 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import yt_dlp
 import re
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 
 # Python 3.13 compatibility for audio modules
 try:
@@ -496,34 +498,54 @@ async def process_youtube_background(job_id: str, youtube_url: str, db: Session)
     """Background task to process YouTube video"""
     job = db.query(Job).filter(Job.id == job_id).first()
     video_path = None
+    audio_path = None
     
     try:
         # Update status to processing
         job.status = "processing"
         db.commit()
         
-        # Download YouTube video
-        download_result = await download_youtube_video(youtube_url)
-        if not download_result:
-            raise RuntimeError("Failed to download YouTube video")
+        # Fast path: Try to get transcript directly from YouTube API
+        print("🚀 Attempting fast transcript path using YouTube Transcript API...")
+        transcript_result = get_youtube_transcript(youtube_url)
         
-        video_path, video_title = download_result
+        if transcript_result:
+            # Fast path successful!
+            transcription, video_title = transcript_result
+            print(f"✅ Fast transcript successful for '{video_title}'")
+            
+            # Update job filename with actual video title
+            job.filename = f"YouTube: {video_title}"
+            db.commit()
+            
+        else:
+            # Fall back to normal flow: download + Whisper
+            print("⬇️ Fast transcript not available, falling back to download + Whisper...")
+            
+            # Download YouTube video
+            download_result = await download_youtube_video(youtube_url)
+            if not download_result:
+                raise RuntimeError("Failed to download YouTube video")
+            
+            video_path, video_title = download_result
+            
+            # Update job filename with actual video title
+            job.filename = f"YouTube: {video_title}"
+            db.commit()
+            
+            # Extract audio
+            audio_path = await extract_audio_from_video(video_path)
+            if not audio_path:
+                raise RuntimeError("Failed to extract audio")
+            
+            # Transcribe audio
+            transcription = await transcribe_audio(audio_path)
+            if not transcription:
+                raise RuntimeError("Failed to transcribe audio")
+                
+            print(f"✅ Normal transcript flow completed for '{video_title}'")
         
-        # Update job filename with actual video title
-        job.filename = f"YouTube: {video_title}"
-        db.commit()
-        
-        # Extract audio
-        audio_path = await extract_audio_from_video(video_path)
-        if not audio_path:
-            raise RuntimeError("Failed to extract audio")
-        
-        # Transcribe audio
-        transcription = await transcribe_audio(audio_path)
-        if not transcription:
-            raise RuntimeError("Failed to transcribe audio")
-        
-        # Save transcription
+        # Common processing for both paths: Save transcription and generate speech
         safe_title = re.sub(r'[^\w\s-]', '', video_title).strip()[:50]  # Safe filename
         transcript_filename = f"{safe_title}_{job_id}_transcript.txt"
         transcript_path = TRANSCRIPTS_DIR / transcript_filename
@@ -547,19 +569,85 @@ async def process_youtube_background(job_id: str, youtube_url: str, db: Session)
         job.completed_at = datetime.now(timezone.utc)
         db.commit()
         
-        # Clean up
-        if os.path.exists(audio_path):
+        # Clean up audio file if it exists
+        if audio_path and os.path.exists(audio_path):
             os.remove(audio_path)
         
+        print(f"🎉 Job {job_id} completed successfully!")
+        
     except Exception as e:
+        print(f"❌ Job {job_id} failed: {e}")
         job.status = "failed"
         job.error_message = str(e)
         db.commit()
     
     finally:
-        # Clean up video file
+        # Clean up temporary files
         if video_path and os.path.exists(video_path):
             os.remove(video_path)
+        if audio_path and os.path.exists(audio_path):
+            os.remove(audio_path)
+
+def extract_youtube_video_id(url: str) -> Optional[str]:
+    """Extract YouTube video ID from URL"""
+    patterns = [
+        r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/|youtube\.com/v/)([^&\n?#]+)',
+        r'youtube\.com/watch\?.*v=([^&\n?#]+)',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, url, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return None
+
+def get_youtube_transcript(url: str) -> Optional[tuple[str, str]]:
+    """
+    Try to get YouTube transcript directly using YouTube Transcript API.
+    Returns (transcript_text, video_title) if successful, None if not available.
+    """
+    try:
+        # Extract video ID
+        video_id = extract_youtube_video_id(url)
+        if not video_id:
+            print(f"Could not extract video ID from URL: {url}")
+            return None
+        
+        print(f"Attempting to get transcript for video ID: {video_id}")
+        
+        # Try to get transcript
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US', 'en-GB'])
+        
+        # Combine transcript entries into single text
+        transcript_text = ' '.join([entry['text'] for entry in transcript_list])
+        
+        if not transcript_text.strip():
+            print("Transcript is empty")
+            return None
+        
+        # Get video title using yt-dlp (lightweight info extraction)
+        try:
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                video_title = info.get('title', f'YouTube Video {video_id}')
+        except Exception as e:
+            print(f"Error getting video title: {e}")
+            video_title = f'YouTube Video {video_id}'
+        
+        print(f"Successfully obtained transcript for '{video_title}' ({len(transcript_text)} characters)")
+        return transcript_text, video_title
+        
+    except (TranscriptsDisabled, NoTranscriptFound) as e:
+        print(f"No transcript available for {url}: {e}")
+        return None
+    except Exception as e:
+        print(f"Error getting transcript for {url}: {e}")
+        return None
 
 # Custom exceptions
 class VideoProcessingError(Exception):
