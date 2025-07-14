@@ -112,9 +112,13 @@
                                         </a>
                                         {% endif %}
                                         {% if job.speech_file %}
+                                        <button onclick="playAudio('{{ job.speech_file }}', '{{ job.id }}')" 
+                                                class="bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700 transition-colors">
+                                            <i class="fas fa-play mr-1"></i>Play
+                                        </button>
                                         <a href="/download/speech/{{ job.speech_file }}" 
-                                           class="bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700 transition-colors">
-                                            <i class="fas fa-volume-up mr-1"></i>Speech
+                                           class="bg-purple-500 text-white px-3 py-1 rounded text-sm hover:bg-purple-600 transition-colors">
+                                            <i class="fas fa-download mr-1"></i>Save
                                         </a>
                                         {% endif %}
                                     {% endif %}
@@ -138,7 +142,71 @@
         </div>
     </div>
 
+    <!-- Audio Player Modal -->
+    <div id="audio-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+        <div class="flex items-center justify-center h-full p-4">
+            <div class="bg-white rounded-lg max-w-md w-full p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 id="audio-title" class="text-lg font-semibold text-gray-800">Audio Player</h3>
+                    <button onclick="closeAudioPlayer()" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+                
+                <div class="space-y-4">
+                    <!-- Audio Element -->
+                    <audio id="audio-player" controls class="w-full" controlsList="nodownload">
+                        <source id="audio-source" src="" type="audio/mpeg">
+                        Your browser does not support the audio element.
+                    </audio>
+                    
+                    <!-- Progress Info -->
+                    <div id="audio-info" class="text-sm text-gray-600">
+                        <div class="flex justify-between">
+                            <span id="current-time">00:00</span>
+                            <span id="duration">00:00</span>
+                        </div>
+                        <div class="mt-1 text-xs text-gray-500">
+                            <span id="resume-info"></span>
+                        </div>
+                    </div>
+                    
+                    <!-- Control Buttons -->
+                    <div class="flex justify-center space-x-4">
+                        <button onclick="seekAudio(-10)" class="bg-gray-200 hover:bg-gray-300 px-3 py-2 rounded-lg">
+                            <i class="fas fa-backward mr-1"></i>-10s
+                        </button>
+                        <button id="play-pause-btn" onclick="togglePlayPause()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+                            <i class="fas fa-play"></i>
+                        </button>
+                        <button onclick="seekAudio(10)" class="bg-gray-200 hover:bg-gray-300 px-3 py-2 rounded-lg">
+                            <i class="fas fa-forward mr-1"></i>+10s
+                        </button>
+                    </div>
+                    
+                    <!-- Speed Control -->
+                    <div class="flex items-center justify-center space-x-2">
+                        <label for="speed-control" class="text-sm text-gray-600">Speed:</label>
+                        <select id="speed-control" onchange="changeSpeed()" class="border border-gray-300 rounded px-2 py-1 text-sm">
+                            <option value="0.5">0.5x</option>
+                            <option value="0.75">0.75x</option>
+                            <option value="1" selected>1x</option>
+                            <option value="1.25">1.25x</option>
+                            <option value="1.5">1.5x</option>
+                            <option value="2">2x</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
+        // Global audio player variables
+        let currentAudio = null;
+        let currentJobId = null;
+        let updateTimeInterval = null;
+
         // File upload handling
         const uploadArea = document.getElementById('upload-area');
         const fileInput = document.getElementById('video-file');
@@ -204,7 +272,7 @@
 
         async function refreshJobs() {
             try {
-                const response = await axios.get('/api/jobs/', {
+                await axios.get('/api/jobs/', {
                     headers: {
                         'Authorization': `Bearer {{ user.email }}`
                     }
@@ -230,6 +298,179 @@
                 alert('Failed to delete job: ' + (error.response?.data?.detail || error.message));
             }
         }
+
+        // Audio Player Functions
+        function playAudio(speechFile, jobId) {
+            const modal = document.getElementById('audio-modal');
+            const audioPlayer = document.getElementById('audio-player');
+            const audioSource = document.getElementById('audio-source');
+            const audioTitle = document.getElementById('audio-title');
+            const resumeInfo = document.getElementById('resume-info');
+
+            // Set audio source and title
+            audioSource.src = `/download/speech/${speechFile}`;
+            audioTitle.textContent = `Playing: ${speechFile}`;
+            audioPlayer.load();
+
+            // Set current job ID for localStorage
+            currentJobId = jobId;
+            currentAudio = audioPlayer;
+
+            // Check for saved position
+            const savedTime = localStorage.getItem(`audio_position_${jobId}`);
+            if (savedTime && parseFloat(savedTime) > 0) {
+                const minutes = Math.floor(savedTime / 60);
+                const seconds = Math.floor(savedTime % 60);
+                resumeInfo.textContent = `Resuming from ${minutes}:${seconds.toString().padStart(2, '0')}`;
+                
+                // Set the saved time when metadata loads
+                audioPlayer.addEventListener('loadedmetadata', function setTime() {
+                    audioPlayer.currentTime = parseFloat(savedTime);
+                    audioPlayer.removeEventListener('loadedmetadata', setTime);
+                }, { once: true });
+            } else {
+                resumeInfo.textContent = 'Starting from beginning';
+            }
+
+            // Show modal
+            modal.classList.remove('hidden');
+
+            // Setup event listeners
+            setupAudioEventListeners();
+        }
+
+        function setupAudioEventListeners() {
+            const audioPlayer = document.getElementById('audio-player');
+            const playPauseBtn = document.getElementById('play-pause-btn');
+            const currentTimeSpan = document.getElementById('current-time');
+            const durationSpan = document.getElementById('duration');
+
+            // Update play/pause button
+            audioPlayer.addEventListener('play', () => {
+                playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
+                startTimeUpdater();
+            });
+
+            audioPlayer.addEventListener('pause', () => {
+                playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
+                stopTimeUpdater();
+            });
+
+            // Update duration when metadata loads
+            audioPlayer.addEventListener('loadedmetadata', () => {
+                durationSpan.textContent = formatTime(audioPlayer.duration);
+            });
+
+            // Save position periodically and on time update
+            audioPlayer.addEventListener('timeupdate', () => {
+                currentTimeSpan.textContent = formatTime(audioPlayer.currentTime);
+                
+                // Save position to localStorage every second
+                if (currentJobId && audioPlayer.currentTime > 0) {
+                    localStorage.setItem(`audio_position_${currentJobId}`, audioPlayer.currentTime);
+                }
+            });
+
+            // Clear saved position when audio ends
+            audioPlayer.addEventListener('ended', () => {
+                if (currentJobId) {
+                    localStorage.removeItem(`audio_position_${currentJobId}`);
+                }
+                playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
+                stopTimeUpdater();
+            });
+        }
+
+        function closeAudioPlayer() {
+            const modal = document.getElementById('audio-modal');
+            const audioPlayer = document.getElementById('audio-player');
+            
+            // Save current position before closing
+            if (currentJobId && audioPlayer.currentTime > 0) {
+                localStorage.setItem(`audio_position_${currentJobId}`, audioPlayer.currentTime);
+            }
+            
+            audioPlayer.pause();
+            modal.classList.add('hidden');
+            stopTimeUpdater();
+            currentAudio = null;
+            currentJobId = null;
+        }
+
+        function togglePlayPause() {
+            const audioPlayer = document.getElementById('audio-player');
+            if (audioPlayer.paused) {
+                audioPlayer.play();
+            } else {
+                audioPlayer.pause();
+            }
+        }
+
+        function seekAudio(seconds) {
+            const audioPlayer = document.getElementById('audio-player');
+            audioPlayer.currentTime = Math.max(0, Math.min(audioPlayer.duration, audioPlayer.currentTime + seconds));
+        }
+
+        function changeSpeed() {
+            const audioPlayer = document.getElementById('audio-player');
+            const speedControl = document.getElementById('speed-control');
+            audioPlayer.playbackRate = parseFloat(speedControl.value);
+        }
+
+        function formatTime(seconds) {
+            if (isNaN(seconds)) return '00:00';
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = Math.floor(seconds % 60);
+            return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+        }
+
+        function startTimeUpdater() {
+            stopTimeUpdater(); // Clear any existing interval
+            updateTimeInterval = setInterval(() => {
+                const audioPlayer = document.getElementById('audio-player');
+                const currentTimeSpan = document.getElementById('current-time');
+                if (audioPlayer && !audioPlayer.paused) {
+                    currentTimeSpan.textContent = formatTime(audioPlayer.currentTime);
+                }
+            }, 1000);
+        }
+
+        function stopTimeUpdater() {
+            if (updateTimeInterval) {
+                clearInterval(updateTimeInterval);
+                updateTimeInterval = null;
+            }
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('audio-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'audio-modal') {
+                closeAudioPlayer();
+            }
+        });
+
+        // Keyboard shortcuts for audio player
+        document.addEventListener('keydown', (e) => {
+            if (currentAudio && !document.getElementById('audio-modal').classList.contains('hidden')) {
+                switch(e.code) {
+                    case 'Space':
+                        e.preventDefault();
+                        togglePlayPause();
+                        break;
+                    case 'ArrowLeft':
+                        e.preventDefault();
+                        seekAudio(-10);
+                        break;
+                    case 'ArrowRight':
+                        e.preventDefault();
+                        seekAudio(10);
+                        break;
+                    case 'Escape':
+                        closeAudioPlayer();
+                        break;
+                }
+            }
+        });
 
         // Auto-refresh every 30 seconds for processing jobs
         setInterval(() => {
