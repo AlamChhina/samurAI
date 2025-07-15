@@ -39,7 +39,7 @@
             <!-- Tab Navigation -->
             <div class="flex space-x-4 mb-6 border-b border-gray-200">
                 <button id="youtube-tab" onclick="switchTab('youtube')" class="pb-2 px-1 text-red-600 border-b-2 border-red-600 font-medium">
-                    <i class="fab fa-youtube mr-1"></i>YouTube URL
+                    <i class="fab fa-youtube mr-1"></i>YouTube
                 </button>
                 <button id="video-tab" onclick="switchTab('video')" class="pb-2 px-1 text-gray-500 hover:text-gray-700 font-medium">
                     <i class="fas fa-file-video mr-1"></i>Upload Video
@@ -54,10 +54,10 @@
                 <div class="space-y-4">
                     <div>
                         <label for="youtube-url" class="block text-sm font-medium text-gray-700 mb-2">
-                            YouTube Video URL
+                            YouTube URL or Video ID
                         </label>
                         <div class="flex space-x-3">
-                            <input type="url" id="youtube-url" placeholder="https://www.youtube.com/watch?v=..." 
+                            <input type="text" id="youtube-url" placeholder="https://www.youtube.com/watch?v=wP3uQUZlhdo or wP3uQUZlhdo" 
                                    class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-red-500 focus:border-transparent">
                             <button onclick="processYouTubeURL()" id="youtube-submit-btn"
                                     class="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center">
@@ -65,7 +65,7 @@
                             </button>
                         </div>
                         <p class="text-xs text-gray-500 mt-1">
-                            Supports YouTube and YouTube Shorts URLs
+                            Supports full YouTube URLs, YouTube Shorts, or just the video ID (11 characters)
                         </p>
                     </div>
                     
@@ -566,7 +566,11 @@
                 });
 
                 if (response.data.job_id) {
-                    alert('Video uploaded successfully! Processing started.');
+                    if (response.data.duplicate) {
+                        alert(`This video has already been processed! Showing existing results (Job ID: ${response.data.job_id})`);
+                    } else {
+                        alert('Video uploaded successfully! Processing started.');
+                    }
                     document.getElementById('video-summary-prompt').value = '';
                     setTimeout(refreshJobs, 1000);
                 }
@@ -606,7 +610,11 @@
                 });
 
                 if (response.data.job_id) {
-                    alert('Audio uploaded successfully! Processing started.');
+                    if (response.data.duplicate) {
+                        alert(`This audio file has already been processed! Showing existing results (Job ID: ${response.data.job_id})`);
+                    } else {
+                        alert('Audio uploaded successfully! Processing started.');
+                    }
                     document.getElementById('audio-summary-prompt').value = '';
                     setTimeout(refreshJobs, 1000);
                 }
@@ -659,20 +667,22 @@
 
         // YouTube URL processing
         async function processYouTubeURL() {
-            const youtubeUrl = document.getElementById('youtube-url').value.trim();
+            const youtubeInput = document.getElementById('youtube-url').value.trim();
             const summaryPrompt = document.getElementById('youtube-summary-prompt').value.trim();
             const youtubeProgress = document.getElementById('youtube-progress');
             const submitBtn = document.getElementById('youtube-submit-btn');
 
-            if (!youtubeUrl) {
-                alert('Please enter a YouTube URL');
+            if (!youtubeInput) {
+                alert('Please enter a YouTube URL or video ID');
                 return;
             }
 
-            // Validate YouTube URL format
+            // Validate YouTube URL format or video ID (11 characters)
             const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)\/.+/;
-            if (!youtubeRegex.test(youtubeUrl)) {
-                alert('Please enter a valid YouTube URL');
+            const videoIdRegex = /^[a-zA-Z0-9_-]{11}$/;
+            
+            if (!youtubeRegex.test(youtubeInput) && !videoIdRegex.test(youtubeInput)) {
+                alert('Please enter a valid YouTube URL or 11-character video ID');
                 return;
             }
 
@@ -682,12 +692,12 @@
 
             try {
                 const requestData = {
-                    url: youtubeUrl
+                    url: youtubeInput
                 };
                 
                 // Only include custom prompt if provided
                 if (summaryPrompt) {
-                    requestData.custom_prompt = summaryPrompt;
+                    requestData.summary_prompt = summaryPrompt;
                 }
 
                 const response = await axios.post('/api/process-youtube/', requestData, {
@@ -698,7 +708,11 @@
                 });
 
                 if (response.data.job_id) {
-                    alert('YouTube video processing started! This may take several minutes.');
+                    if (response.data.duplicate) {
+                        alert(`This YouTube video has already been processed! Showing existing results (Job ID: ${response.data.job_id})`);
+                    } else {
+                        alert('YouTube video processing started! This may take several minutes.');
+                    }
                     document.getElementById('youtube-url').value = '';
                     document.getElementById('youtube-summary-prompt').value = '';
                     setTimeout(refreshJobs, 1000);

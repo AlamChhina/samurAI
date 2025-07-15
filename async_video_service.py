@@ -14,6 +14,7 @@ import tempfile
 import shutil
 from pathlib import Path
 import uuid
+import hashlib
 from typing import Optional
 from sqlalchemy.orm import Session
 from database import get_db, User, Job
@@ -189,9 +190,10 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)):
     except Exception:
         return None
 
-def is_valid_youtube_url(url: str) -> bool:
-    """Validate if the URL is a valid YouTube URL"""
-    youtube_patterns = [
+def is_valid_youtube_url_or_id(input_str: str) -> bool:
+    """Validate if the input is a valid YouTube URL or video ID"""
+    # Check if it's a valid YouTube URL
+    youtube_url_patterns = [
         r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/',
         r'(https?://)?youtu\.be/',
         r'(https?://)?(www\.)?youtube\.com/watch\?v=',
@@ -199,10 +201,46 @@ def is_valid_youtube_url(url: str) -> bool:
         r'(https?://)?(www\.)?youtube\.com/v/',
     ]
     
-    for pattern in youtube_patterns:
-        if re.search(pattern, url, re.IGNORECASE):
+    for pattern in youtube_url_patterns:
+        if re.search(pattern, input_str, re.IGNORECASE):
             return True
+    
+    # Check if it's a valid video ID (11 characters, alphanumeric with - and _)
+    video_id_pattern = r'^[a-zA-Z0-9_-]{11}$'
+    if re.match(video_id_pattern, input_str.strip()):
+        return True
+    
     return False
+
+def is_valid_youtube_url(url: str) -> bool:
+    """Validate if the URL is a valid YouTube URL (backward compatibility)"""
+    return is_valid_youtube_url_or_id(url)
+
+def generate_content_hash(content: str) -> str:
+    """Generate a hash for content to detect duplicates"""
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()
+
+def generate_file_hash(file_path: str) -> str:
+    """Generate a hash for a file to detect duplicates"""
+    hash_obj = hashlib.sha256()
+    with open(file_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_obj.update(chunk)
+    return hash_obj.hexdigest()
+
+async def generate_file_hash_async(file_path: str) -> str:
+    """Generate a hash for a file asynchronously"""
+    def _hash_file():
+        return generate_file_hash(file_path)
+    return await asyncio.to_thread(_hash_file)
+
+def check_duplicate_job(db: Session, user_id: str, content_hash: str) -> Optional[Job]:
+    """Check if a job with the same content hash already exists for the user"""
+    return db.query(Job).filter(
+        Job.user_id == user_id,
+        Job.content_hash == content_hash,
+        Job.status.in_(["completed", "processing", "pending"])
+    ).first()
 
 async def download_youtube_video(url: str) -> Optional[tuple[str, str]]:
     """Download YouTube video and return the local file path"""
@@ -783,18 +821,34 @@ async def process_youtube_background(job_id: str, youtube_url: str, db: Session,
         if audio_path and os.path.exists(audio_path):
             os.remove(audio_path)
 
-def extract_youtube_video_id(url: str) -> Optional[str]:
-    """Extract YouTube video ID from URL"""
+def extract_youtube_video_id(url_or_id: str) -> Optional[str]:
+    """Extract YouTube video ID from URL or return the ID if it's already a video ID"""
+    # First check if it's already a valid video ID (11 characters, alphanumeric with - and _)
+    video_id_pattern = r'^[a-zA-Z0-9_-]{11}$'
+    if re.match(video_id_pattern, url_or_id.strip()):
+        return url_or_id.strip()
+    
+    # If not a plain ID, try to extract from URL
     patterns = [
         r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/|youtube\.com/v/)([^&\n?#]+)',
         r'youtube\.com/watch\?.*v=([^&\n?#]+)',
     ]
     
     for pattern in patterns:
-        match = re.search(pattern, url, re.IGNORECASE)
+        match = re.search(pattern, url_or_id, re.IGNORECASE)
         if match:
             return match.group(1)
     return None
+
+def normalize_youtube_input(url_or_id: str) -> str:
+    """Convert video ID to full YouTube URL or return the URL as-is"""
+    # Check if it's a plain video ID
+    video_id_pattern = r'^[a-zA-Z0-9_-]{11}$'
+    if re.match(video_id_pattern, url_or_id.strip()):
+        return f"https://www.youtube.com/watch?v={url_or_id.strip()}"
+    
+    # If it's already a URL, return as-is
+    return url_or_id
 
 def get_youtube_transcript(url: str) -> Optional[tuple[str, str]]:
     """
@@ -964,10 +1018,35 @@ async def process_video(
     if file_extension not in valid_extensions:
         raise HTTPException(status_code=400, detail=f"Supported formats: {', '.join(valid_extensions)}")
     
+    # Save uploaded file temporarily to generate hash
+    temp_video_path = f"temp_video_hash_{uuid.uuid4().hex}.{file_extension}"
+    async with aiofiles.open(temp_video_path, 'wb') as f:
+        content = await file.read()
+        await f.write(content)
+    
+    # Generate content hash for duplicate detection
+    file_hash = await generate_file_hash_async(temp_video_path)
+    content_identifier = f"video:{file_hash}:{summary_prompt or 'default'}"
+    content_hash = generate_content_hash(content_identifier)
+    
+    # Check for existing job with same content
+    existing_job = check_duplicate_job(db, user.id, content_hash)
+    if existing_job:
+        # Clean up temporary file
+        if os.path.exists(temp_video_path):
+            os.remove(temp_video_path)
+        return {
+            "job_id": existing_job.id, 
+            "status": existing_job.status, 
+            "message": f"This video has already been processed (Job ID: {existing_job.id})",
+            "duplicate": True
+        }
+    
     # Create job
     job = Job(
         user_id=user.id,
         filename=file.filename,
+        content_hash=content_hash,
         status="pending",
         summary_prompt=summary_prompt
     )
@@ -975,11 +1054,9 @@ async def process_video(
     db.commit()
     db.refresh(job)
     
-    # Save uploaded file
+    # Rename temporary file to job-specific name
     video_path = f"temp_video_{job.id}.{file_extension}"
-    async with aiofiles.open(video_path, 'wb') as f:
-        content = await file.read()
-        await f.write(content)
+    os.rename(temp_video_path, video_path)
     
     # Start background processing
     background_tasks.add_task(process_video_background, job.id, video_path, file.filename, db, summary_prompt)
@@ -1005,10 +1082,35 @@ async def process_audio(
     if not (file.content_type and file.content_type.startswith('audio/')) and file_extension not in valid_extensions:
         raise HTTPException(status_code=400, detail=f"File must be an audio file. Supported formats: {', '.join(valid_extensions)}")
     
+    # Save uploaded file temporarily to generate hash
+    temp_audio_path = f"temp_audio_hash_{uuid.uuid4().hex}.{file_extension[1:]}"
+    async with aiofiles.open(temp_audio_path, 'wb') as f:
+        content = await file.read()
+        await f.write(content)
+    
+    # Generate content hash for duplicate detection
+    file_hash = await generate_file_hash_async(temp_audio_path)
+    content_identifier = f"audio:{file_hash}:{summary_prompt or 'default'}"
+    content_hash = generate_content_hash(content_identifier)
+    
+    # Check for existing job with same content
+    existing_job = check_duplicate_job(db, user.id, content_hash)
+    if existing_job:
+        # Clean up temporary file
+        if os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path)
+        return {
+            "job_id": existing_job.id, 
+            "status": existing_job.status, 
+            "message": f"This audio file has already been processed (Job ID: {existing_job.id})",
+            "duplicate": True
+        }
+    
     # Create job in database
     job = Job(
         user_id=user.id,
         filename=file.filename,
+        content_hash=content_hash,
         status="pending",
         summary_prompt=summary_prompt,
         created_at=datetime.now(timezone.utc)
@@ -1017,11 +1119,9 @@ async def process_audio(
     db.commit()
     db.refresh(job)
     
-    # Save uploaded file
+    # Rename temporary file to job-specific name
     audio_path = f"temp_audio_{job.id}.{file_extension[1:]}"  # Remove the dot from extension
-    async with aiofiles.open(audio_path, 'wb') as f:
-        content = await file.read()
-        await f.write(content)
+    os.rename(temp_audio_path, audio_path)
     
     # Start background processing
     background_tasks.add_task(process_audio_background, job.id, audio_path, file.filename, db, summary_prompt)
@@ -1035,18 +1135,36 @@ async def process_youtube(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Process YouTube video from URL"""
+    """Process YouTube video from URL or video ID"""
     if not user:
         raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
     
-    # Validate YouTube URL
-    if not is_valid_youtube_url(request.url):
-        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+    # Validate YouTube URL or video ID
+    if not is_valid_youtube_url_or_id(request.url):
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL or video ID")
+    
+    # Normalize input to full URL format
+    normalized_url = normalize_youtube_input(request.url)
+    
+    # Generate content hash for duplicate detection
+    content_identifier = f"youtube:{extract_youtube_video_id(normalized_url)}:{request.summary_prompt or 'default'}"
+    content_hash = generate_content_hash(content_identifier)
+    
+    # Check for existing job with same content
+    existing_job = check_duplicate_job(db, user.id, content_hash)
+    if existing_job:
+        return {
+            "job_id": existing_job.id, 
+            "status": existing_job.status, 
+            "message": f"This YouTube video has already been processed (Job ID: {existing_job.id})",
+            "duplicate": True
+        }
     
     # Create job with URL as filename initially
     job = Job(
         user_id=user.id,
-        filename=f"YouTube: {request.url}",
+        filename=f"YouTube: {normalized_url}",
+        content_hash=content_hash,
         status="pending",
         summary_prompt=request.summary_prompt
     )
@@ -1055,7 +1173,7 @@ async def process_youtube(
     db.refresh(job)
     
     # Start background processing for YouTube
-    background_tasks.add_task(process_youtube_background, job.id, request.url, db, request.summary_prompt)
+    background_tasks.add_task(process_youtube_background, job.id, normalized_url, db, request.summary_prompt)
     
     return {"job_id": job.id, "status": "pending", "message": "YouTube video processing started"}
 
