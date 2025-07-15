@@ -568,6 +568,8 @@
                 if (response.data.job_id) {
                     if (response.data.duplicate) {
                         alert(`This video has already been processed! Showing existing results (Job ID: ${response.data.job_id})`);
+                    } else if (response.data.reused) {
+                        alert(`🚀 This video was already processed by another user! Created instant copy for you (Job ID: ${response.data.job_id})`);
                     } else {
                         alert('Video uploaded successfully! Processing started.');
                     }
@@ -612,6 +614,8 @@
                 if (response.data.job_id) {
                     if (response.data.duplicate) {
                         alert(`This audio file has already been processed! Showing existing results (Job ID: ${response.data.job_id})`);
+                    } else if (response.data.reused) {
+                        alert(`🚀 This audio file was already processed by another user! Created instant copy for you (Job ID: ${response.data.job_id})`);
                     } else {
                         alert('Audio uploaded successfully! Processing started.');
                     }
@@ -710,6 +714,8 @@
                 if (response.data.job_id) {
                     if (response.data.duplicate) {
                         alert(`This YouTube video has already been processed! Showing existing results (Job ID: ${response.data.job_id})`);
+                    } else if (response.data.reused) {
+                        alert(`🚀 This YouTube video was already processed by another user! Created instant copy for you (Job ID: ${response.data.job_id})`);
                     } else {
                         alert('YouTube video processing started! This may take several minutes.');
                     }

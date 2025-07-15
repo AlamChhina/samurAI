@@ -28,7 +28,17 @@ import yt_dlp
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
-from transformers import pipeline
+
+# MLX imports for Apple Silicon optimization
+try:
+    import mlx.core as mx
+    import mlx_lm
+    from mlx_lm import load, generate
+    MLX_AVAILABLE = True
+    print("🚀 MLX available for Apple Silicon optimization")
+except ImportError:
+    MLX_AVAILABLE = False
+    print("⚠️ MLX not available, falling back to CPU-based summarization")
 
 # Python 3.13 compatibility for audio modules
 try:
@@ -71,7 +81,7 @@ templates = Jinja2Templates(directory="templates")
 
 # Configuration
 MODEL_ID = "openai/whisper-base"
-SUMMARIZATION_MODEL_ID = "sshleifer/distilbart-cnn-12-6"  # Lightweight BART model for summarization
+MLX_MODEL_ID = "mlx-community/Llama-3.2-3B-Instruct-4bit"  # Lightweight MLX model for summarization
 OUTPUT_DIR = Path("./outputs")
 TRANSCRIPTS_DIR = OUTPUT_DIR / "transcripts"
 SPEECH_DIR = OUTPUT_DIR / "speech"
@@ -86,7 +96,10 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/au
 PREFERRED_VOICE = os.getenv("PREFERRED_VOICE", "en-US-AriaNeural")  # High-quality edge-tts voice
 
 print("🔊 TTS Engine: Edge-TTS (Microsoft Neural Voices) ✅")
-print("📝 Summarization: DistilBART (Lightweight & Efficient) ✅")
+if MLX_AVAILABLE:
+    print("🧠 Summarization: MLX (Apple Silicon Optimized) ✅")
+else:
+    print("🧠 Summarization: Fallback to extractive method ⚠️")
 
 # Debug: Print loaded values (remove in production)
 print("🔍 Debug - Loaded OAuth config:")
@@ -123,7 +136,8 @@ else:
 # Global variables for model caching
 processor = None
 model = None
-summarizer = None
+mlx_model = None
+mlx_tokenizer = None
 security = HTTPBearer(auto_error=False)
 
 class JobResponse(BaseModel):
@@ -241,6 +255,105 @@ def check_duplicate_job(db: Session, user_id: str, content_hash: str) -> Optiona
         Job.content_hash == content_hash,
         Job.status.in_(["completed", "processing", "pending"])
     ).first()
+
+def check_existing_processed_content(db: Session, content_hash: str) -> Optional[Job]:
+    """Check if ANY user has already processed this content successfully"""
+    return db.query(Job).filter(
+        Job.content_hash == content_hash,
+        Job.status == "completed"
+    ).first()
+
+def create_job_from_existing_content(db: Session, user_id: str, existing_job: Job, filename: str, summary_prompt: Optional[str] = None) -> Job:
+    """Create a new job for a user by copying data from an existing completed job"""
+    
+    # Generate new filenames for this user
+    import uuid
+    new_job_id = str(uuid.uuid4())
+    
+    # Extract base name from existing files
+    if existing_job.transcript_file:
+        base_name = existing_job.transcript_file.split('_')[0]
+        new_transcript_filename = f"{base_name}_{new_job_id}_transcript.txt"
+    else:
+        new_transcript_filename = None
+        
+    if existing_job.speech_file:
+        base_name = existing_job.speech_file.split('_')[0]
+        new_speech_filename = f"{base_name}_{new_job_id}_speech.mp3"
+    else:
+        new_speech_filename = None
+        
+    if existing_job.summary_file:
+        base_name = existing_job.summary_file.split('_')[0] 
+        new_summary_filename = f"{base_name}_{new_job_id}_summary.txt"
+    else:
+        new_summary_filename = None
+        
+    if existing_job.summary_speech_file:
+        base_name = existing_job.summary_speech_file.split('_')[0]
+        new_summary_speech_filename = f"{base_name}_{new_job_id}_summary_speech.mp3"
+    else:
+        new_summary_speech_filename = None
+    
+    # Create new job record
+    new_job = Job(
+        id=new_job_id,
+        user_id=user_id,
+        filename=filename,
+        content_hash=existing_job.content_hash,
+        status="completed",
+        transcription=existing_job.transcription,
+        transcript_file=new_transcript_filename,
+        speech_file=new_speech_filename,
+        summary=existing_job.summary,
+        summary_file=new_summary_filename,
+        summary_speech_file=new_summary_speech_filename,
+        summary_prompt=summary_prompt or existing_job.summary_prompt,
+        completed_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc)
+    )
+    
+    # Copy files if they exist
+    try:
+        if existing_job.transcript_file and new_transcript_filename:
+            existing_transcript_path = TRANSCRIPTS_DIR / existing_job.transcript_file
+            new_transcript_path = TRANSCRIPTS_DIR / new_transcript_filename
+            if existing_transcript_path.exists():
+                import shutil
+                shutil.copy2(existing_transcript_path, new_transcript_path)
+        
+        if existing_job.speech_file and new_speech_filename:
+            existing_speech_path = SPEECH_DIR / existing_job.speech_file
+            new_speech_path = SPEECH_DIR / new_speech_filename
+            if existing_speech_path.exists():
+                import shutil
+                shutil.copy2(existing_speech_path, new_speech_path)
+        
+        if existing_job.summary_file and new_summary_filename:
+            existing_summary_path = SUMMARIES_DIR / existing_job.summary_file
+            new_summary_path = SUMMARIES_DIR / new_summary_filename
+            if existing_summary_path.exists():
+                import shutil
+                shutil.copy2(existing_summary_path, new_summary_path)
+                
+        if existing_job.summary_speech_file and new_summary_speech_filename:
+            existing_summary_speech_path = SPEECH_DIR / existing_job.summary_speech_file
+            new_summary_speech_path = SPEECH_DIR / new_summary_speech_filename
+            if existing_summary_speech_path.exists():
+                import shutil
+                shutil.copy2(existing_summary_speech_path, new_summary_speech_path)
+    
+    except Exception as e:
+        print(f"Warning: Error copying files for job {new_job_id}: {e}")
+        # Continue anyway - the transcription text is still available
+    
+    # Save to database
+    db.add(new_job)
+    db.commit()
+    db.refresh(new_job)
+    
+    print(f"✅ Created new job {new_job_id} by reusing content from job {existing_job.id}")
+    return new_job
 
 async def download_youtube_video(url: str) -> Optional[tuple[str, str]]:
     """Download YouTube video and return the local file path"""
@@ -556,8 +669,8 @@ async def process_video_background(job_id: str, video_path: str, filename: str, 
         if not success:
             raise RuntimeError("Failed to generate speech")
         
-        # Generate summary using DistilBART
-        print("📝 Generating summary using DistilBART...")
+        # Generate summary using MLX
+        print("🧠 Generating summary using MLX...")
         summary = await generate_summary(transcription, custom_prompt)
         
         summary_filename = None
@@ -647,8 +760,8 @@ async def process_audio_background(job_id: str, audio_path: str, filename: str, 
         if not success:
             raise RuntimeError("Failed to generate speech")
         
-        # Generate summary using DistilBART
-        print("📝 Generating summary using DistilBART...")
+        # Generate summary using MLX
+        print("🧠 Generating summary using MLX...")
         summary = await generate_summary(transcription, summary_prompt)
         
         summary_filename = None
@@ -756,8 +869,8 @@ async def process_youtube_background(job_id: str, youtube_url: str, db: Session,
         async with aiofiles.open(transcript_path, 'w') as f:
             await f.write(transcription)
         
-        # Generate summary using DistilBART
-        print("📝 Generating summary using DistilBART...")
+        # Generate summary using MLX
+        print("🧠 Generating summary using MLX...")
         summary = await generate_summary(transcription, custom_prompt)
         
         summary_filename = None
@@ -1029,17 +1142,35 @@ async def process_video(
     content_identifier = f"video:{file_hash}:{summary_prompt or 'default'}"
     content_hash = generate_content_hash(content_identifier)
     
-    # Check for existing job with same content
-    existing_job = check_duplicate_job(db, user.id, content_hash)
-    if existing_job:
+    # Check for existing job by this user first
+    existing_user_job = check_duplicate_job(db, user.id, content_hash)
+    if existing_user_job:
         # Clean up temporary file
         if os.path.exists(temp_video_path):
             os.remove(temp_video_path)
         return {
-            "job_id": existing_job.id, 
-            "status": existing_job.status, 
-            "message": f"This video has already been processed (Job ID: {existing_job.id})",
+            "job_id": existing_user_job.id, 
+            "status": existing_user_job.status, 
+            "message": f"This video has already been processed (Job ID: {existing_user_job.id})",
             "duplicate": True
+        }
+    
+    # Check if ANY user has processed this content successfully
+    existing_processed_job = check_existing_processed_content(db, content_hash)
+    if existing_processed_job:
+        # Clean up temporary file
+        if os.path.exists(temp_video_path):
+            os.remove(temp_video_path)
+        # Create a new job for this user by copying the existing content
+        new_job = create_job_from_existing_content(
+            db, user.id, existing_processed_job, 
+            file.filename, summary_prompt
+        )
+        return {
+            "job_id": new_job.id, 
+            "status": "completed", 
+            "message": f"Video was already processed. Created instant copy for you (Job ID: {new_job.id})",
+            "reused": True
         }
     
     # Create job
@@ -1093,17 +1224,35 @@ async def process_audio(
     content_identifier = f"audio:{file_hash}:{summary_prompt or 'default'}"
     content_hash = generate_content_hash(content_identifier)
     
-    # Check for existing job with same content
-    existing_job = check_duplicate_job(db, user.id, content_hash)
-    if existing_job:
+    # Check for existing job by this user first
+    existing_user_job = check_duplicate_job(db, user.id, content_hash)
+    if existing_user_job:
         # Clean up temporary file
         if os.path.exists(temp_audio_path):
             os.remove(temp_audio_path)
         return {
-            "job_id": existing_job.id, 
-            "status": existing_job.status, 
-            "message": f"This audio file has already been processed (Job ID: {existing_job.id})",
+            "job_id": existing_user_job.id, 
+            "status": existing_user_job.status, 
+            "message": f"This audio file has already been processed (Job ID: {existing_user_job.id})",
             "duplicate": True
+        }
+    
+    # Check if ANY user has processed this content successfully
+    existing_processed_job = check_existing_processed_content(db, content_hash)
+    if existing_processed_job:
+        # Clean up temporary file
+        if os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path)
+        # Create a new job for this user by copying the existing content
+        new_job = create_job_from_existing_content(
+            db, user.id, existing_processed_job, 
+            file.filename, summary_prompt
+        )
+        return {
+            "job_id": new_job.id, 
+            "status": "completed", 
+            "message": f"Audio file was already processed. Created instant copy for you (Job ID: {new_job.id})",
+            "reused": True
         }
     
     # Create job in database
@@ -1150,14 +1299,29 @@ async def process_youtube(
     content_identifier = f"youtube:{extract_youtube_video_id(normalized_url)}:{request.summary_prompt or 'default'}"
     content_hash = generate_content_hash(content_identifier)
     
-    # Check for existing job with same content
-    existing_job = check_duplicate_job(db, user.id, content_hash)
-    if existing_job:
+    # Check for existing job by this user first
+    existing_user_job = check_duplicate_job(db, user.id, content_hash)
+    if existing_user_job:
         return {
-            "job_id": existing_job.id, 
-            "status": existing_job.status, 
-            "message": f"This YouTube video has already been processed (Job ID: {existing_job.id})",
+            "job_id": existing_user_job.id, 
+            "status": existing_user_job.status, 
+            "message": f"This YouTube video has already been processed (Job ID: {existing_user_job.id})",
             "duplicate": True
+        }
+    
+    # Check if ANY user has processed this content successfully
+    existing_processed_job = check_existing_processed_content(db, content_hash)
+    if existing_processed_job:
+        # Create a new job for this user by copying the existing content
+        new_job = create_job_from_existing_content(
+            db, user.id, existing_processed_job, 
+            f"YouTube: {normalized_url}", request.summary_prompt
+        )
+        return {
+            "job_id": new_job.id, 
+            "status": "completed", 
+            "message": f"YouTube video was already processed. Created instant copy for you (Job ID: {new_job.id})",
+            "reused": True
         }
     
     # Create job with URL as filename initially
@@ -1293,179 +1457,105 @@ async def delete_job(job_id: str, user: User = Depends(get_current_user), db: Se
     
     return {"message": "Job deleted successfully"}
 
-def load_summarizer():
-    """Load DistilBART model for text summarization (cached)"""
-    global summarizer
-    if summarizer is None:
-        print("Loading DistilBART summarization model...")
+def load_mlx_model():
+    """Load MLX model for text summarization (cached) - Apple Silicon optimized"""
+    global mlx_model, mlx_tokenizer
+    if mlx_model is None and MLX_AVAILABLE:
+        print("Loading MLX summarization model...")
         try:
-            # Use DistilBART for text summarization - lightweight and efficient
-            if device.type == "mps":
-                model_device = 0 if torch.backends.mps.is_available() else -1
-            elif device.type == "cuda":
-                model_device = 0
-            else:
-                model_device = -1  # CPU
-                
-            # Load the summarization pipeline with DistilBART
-            summarizer = pipeline(
-                "summarization",
-                model=SUMMARIZATION_MODEL_ID,
-                device=model_device,
-                torch_dtype=torch.float16 if device.type in ["mps", "cuda"] else torch.float32,
-                max_length=150,  # Maximum summary length
-                min_length=50,   # Minimum summary length
-                do_sample=False  # Use deterministic generation for consistent results
-            )
-            print(f"✅ DistilBART summarization model loaded on {device}")
+            # Load MLX model optimized for Apple Silicon
+            mlx_model, mlx_tokenizer = load(MLX_MODEL_ID)
+            print(f"✅ MLX model {MLX_MODEL_ID} loaded for Apple Silicon")
         except Exception as e:
-            print(f"❌ Failed to load DistilBART model: {e}")
-            print("📝 Falling back to simple text truncation for summaries")
-            summarizer = "fallback"
-    return summarizer
+            print(f"❌ Failed to load MLX model: {e}")
+            print("📝 Falling back to extractive summarization")
+            mlx_model = "fallback"
+    return mlx_model, mlx_tokenizer
 
-def _summarize_chunk(summarizer_model, chunk: str, max_length: int = 100, min_length: int = 30) -> str:
-    """Summarize a single chunk of text"""
+def _create_mlx_summary(text: str, custom_prompt: Optional[str] = None) -> str:
+    """Create summary using MLX model"""
     try:
-        result = summarizer_model(chunk, max_length=max_length, min_length=min_length, do_sample=False)
-        return result[0]['summary_text']
-    except Exception as e:
-        print(f"Chunk summarization failed: {e}")
-        # Extract key sentences from this chunk as fallback
-        sentences = chunk.split('. ')
-        summary = '. '.join(sentences[:2])
+        model, tokenizer = load_mlx_model()
+        if model == "fallback":
+            return _create_extractive_summary(text)
+        
+        # Create prompt for summarization
+        if custom_prompt:
+            prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nPlease summarize the following text based on this guidance: {custom_prompt}\n\nText to summarize:\n{text[:4000]}\n\nProvide a concise summary focusing on the key points mentioned in the guidance.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+        else:
+            prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nPlease provide a concise summary of the following text, highlighting the main points and key information:\n\n{text[:4000]}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+        
+        # Generate summary
+        response = generate(
+            model, 
+            tokenizer, 
+            prompt=prompt,
+            max_tokens=300
+        )
+        
+        # Clean up the response
+        summary = response.strip()
+        
+        # Remove any model artifacts
+        if summary.startswith("Summary:"):
+            summary = summary[8:].strip()
+        
         return summary
+        
+    except Exception as e:
+        print(f"MLX summarization failed: {e}")
+        return _create_extractive_summary(text)
 
-def _create_fallback_summary(text: str, num_sentences: int = 3) -> str:
-    """Create a simple extractive summary by taking first N sentences"""
-    sentences = text.split('. ')
-    summary = '. '.join(sentences[:num_sentences])
+def _create_extractive_summary(text: str, num_sentences: int = 4) -> str:
+    """Create a simple extractive summary by taking key sentences"""
+    sentences = [s.strip() for s in text.split('.') if s.strip() and len(s.strip()) > 20]
+    
+    if len(sentences) <= num_sentences:
+        return '. '.join(sentences) + '.'
+    
+    # Score sentences by length and position (favor longer sentences and earlier ones)
+    scored_sentences = []
+    for i, sentence in enumerate(sentences):
+        # Simple scoring: length + position bonus
+        score = len(sentence.split()) + (1.0 / (i + 1)) * 10
+        scored_sentences.append((score, sentence))
+    
+    # Sort by score and take top sentences
+    scored_sentences.sort(key=lambda x: x[0], reverse=True)
+    top_sentences = [sentence for _, sentence in scored_sentences[:num_sentences]]
+    
+    # Reorder sentences by their original position
+    reordered = []
+    for sentence in sentences:
+        if sentence in top_sentences:
+            reordered.append(sentence)
+    
+    summary = '. '.join(reordered)
     if not summary.endswith('.'):
         summary += '.'
+    
     return summary
 
-def _split_text_into_chunks(text: str, max_chunk_length: int = 1024) -> list[str]:
-    """Split text into chunks for processing"""
-    words = text.split()
-    chunks = []
-    for i in range(0, len(words), max_chunk_length):
-        chunk = ' '.join(words[i:i + max_chunk_length])
-        chunks.append(chunk)
-    return chunks
-
 async def generate_summary(text: str, custom_prompt: Optional[str] = None) -> Optional[str]:
-    """Generate a summary of the given text using DistilBART or custom prompt"""
+    """Generate a summary of the given text using MLX or extractive methods"""
     try:
         def _summarize():
-            summarizer_model = load_summarizer()
-            
-            if summarizer_model == "fallback":
-                return f"Summary (fallback): {_create_fallback_summary(text, 5)}"
-            
-            # If custom prompt is provided, use prompt-based summarization
-            if custom_prompt:
-                return _generate_custom_prompt_summary(text, custom_prompt)
-            
-            # Default behavior: use DistilBART for standard summarization
-            max_chunk_length = 1024  # DistilBART's optimal input length
-            words = text.split()
-            
-            # Short text, summarize directly
-            if len(words) <= max_chunk_length:
-                return _summarize_chunk(summarizer_model, text, max_length=150, min_length=50)
-            
-            # Long text, chunk and summarize
-            chunks = _split_text_into_chunks(text, max_chunk_length)
-            summaries = []
-            
-            for i, chunk in enumerate(chunks):
-                print(f"Summarizing chunk {i+1}/{len(chunks)}")
-                chunk_summary = _summarize_chunk(summarizer_model, chunk)
-                summaries.append(chunk_summary)
-            
-            # Combine chunk summaries
-            combined_summary = ' '.join(summaries)
-            
-            # If combined summary is still long, summarize it again
-            if len(combined_summary.split()) > 200:
-                return _summarize_chunk(summarizer_model, combined_summary, max_length=150, min_length=50)
-            
-            return combined_summary
+            if MLX_AVAILABLE:
+                print("🧠 Generating summary using MLX...")
+                return _create_mlx_summary(text, custom_prompt)
+            else:
+                print("📝 Generating extractive summary...")
+                return _create_extractive_summary(text)
         
         summary = await asyncio.to_thread(_summarize)
-        prompt_type = "custom prompt" if custom_prompt else "standard"
-        print(f"✅ Summary generated using {prompt_type} ({len(summary)} characters)")
+        summary_type = "MLX" if MLX_AVAILABLE else "extractive"
+        prompt_info = " with custom prompt" if custom_prompt else ""
+        print(f"✅ Summary generated using {summary_type}{prompt_info} ({len(summary)} characters)")
         return summary
         
     except Exception as e:
         print(f"❌ Summary generation failed: {e}")
-        return f"Summary (auto): {_create_fallback_summary(text)}"
-
-def _generate_custom_prompt_summary(text: str, custom_prompt: str) -> str:
-    """Generate summary using a custom prompt with intelligent extraction"""
-    try:
-        # For now, use guided extractive summarization with the custom prompt
-        # This avoids loading additional models and works efficiently
-        print(f"Generating custom summary with prompt: {custom_prompt[:50]}...")
-        
-        # Use the guided extractive approach which is fast and effective
-        return _create_guided_extractive_summary(text, custom_prompt)
-            
-    except Exception as e:
-        print(f"Error in custom prompt summarization: {e}")
-        return _create_fallback_summary(text, 3)
-
-def _create_guided_extractive_summary(text: str, prompt: str) -> str:
-    """Create an intelligent extractive summary guided by the prompt"""
-    sentences = [s.strip() for s in text.split('.') if s.strip()]
-    
-    # Extract keywords from the prompt
-    prompt_words = {word.lower().strip('.,!?;:') for word in prompt.split() 
-                   if len(word) > 3 and word.lower() not in {'this', 'that', 'with', 'from', 'they', 'have', 'will', 'been', 'said', 'what', 'when', 'where', 'about', 'please', 'focus', 'summary', 'summarize'}}
-    
-    # Score sentences based on prompt relevance
-    scored_sentences = []
-    for sentence in sentences:
-        sentence_words = {word.lower().strip('.,!?;:') for word in sentence.split()}
-        
-        # Calculate relevance score
-        keyword_matches = len(prompt_words.intersection(sentence_words))
-        sentence_length_score = min(len(sentence.split()) / 20, 1.0)  # Prefer medium-length sentences
-        
-        # Boost score for sentences containing multiple prompt keywords
-        relevance_score = keyword_matches * 2 + sentence_length_score
-        
-        # Extra boost for sentences with specific focus words from prompt
-        focus_words = {'ethical', 'concern', 'issue', 'problem', 'benefit', 'advantage', 'impact', 'effect', 'result', 'consequence'}
-        if any(word in sentence.lower() for word in focus_words if word in prompt.lower()):
-            relevance_score += 1
-        
-        scored_sentences.append((relevance_score, sentence))
-    
-    # Sort by relevance score and take top sentences
-    scored_sentences.sort(key=lambda x: x[0], reverse=True)
-    
-    # Select top 3-5 sentences, ensuring we have enough content
-    selected_sentences = []
-    total_words = 0
-    max_words = 150
-    
-    for score, sentence in scored_sentences:
-        if score > 0 and total_words < max_words:  # Only include relevant sentences
-            selected_sentences.append(sentence)
-            total_words += len(sentence.split())
-            if len(selected_sentences) >= 5:  # Max 5 sentences
-                break
-    
-    # If no relevant sentences found, fall back to first few sentences
-    if not selected_sentences:
-        selected_sentences = sentences[:3]
-    
-    summary = '. '.join(selected_sentences)
-    if not summary.endswith('.'):
-        summary += '.'
-    
-    return f"Summary (guided by: {prompt[:30]}...): {summary}"
+        return _create_extractive_summary(text)
 
 @app.post("/api/regenerate-summary/")
 async def regenerate_summary(
