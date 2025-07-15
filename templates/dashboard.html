@@ -210,46 +210,71 @@
                                 
                                 <div class="flex items-center space-x-2">
                                     {% if job.status == 'completed' %}
-                                        {% if job.transcript_file %}
-                                        <a href="/download/transcript/{{ job.transcript_file }}" 
-                                           class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition-colors">
-                                            <i class="fas fa-file-alt mr-1"></i>Transcript
-                                        </a>
-                                        {% endif %}
-                                        
-                                        {% if job.summary_file %}
-                                        <a href="/download/summary/{{ job.summary_file }}" 
-                                           class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 transition-colors">
-                                            <i class="fas fa-brain mr-1"></i>Summary
-                                        </a>
-                                        {% endif %}
-                                        
-                                        {% if job.speech_file %}
-                                        <button onclick="playAudio('{{ job.speech_file }}', '{{ job.id }}', 'Full Transcript')" 
-                                                class="bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700 transition-colors">
-                                            <i class="fas fa-play mr-1"></i>Play Full
+                                        <!-- Compact Actions Dropdown -->
+                                        <div class="relative">
+                                            <button onclick="toggleJobActions('{{ job.id }}')" 
+                                                    class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition-colors flex items-center">
+                                                <i class="fas fa-cog mr-2"></i>Actions
+                                                <i class="fas fa-chevron-down ml-2"></i>
+                                            </button>
+                                            
+                                            <!-- Dropdown Menu -->
+                                            <div id="actions-{{ job.id }}" class="hidden absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+                                                <div class="py-2">
+                                                    {% if job.transcript_file %}
+                                                    <a href="/download/transcript/{{ job.transcript_file }}" 
+                                                       class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                                        <i class="fas fa-file-alt mr-3 text-green-600"></i>Download Transcript
+                                                    </a>
+                                                    {% endif %}
+                                                    
+                                                    {% if job.summary_file %}
+                                                    <a href="/download/summary/{{ job.summary_file }}" 
+                                                       class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                                        <i class="fas fa-brain mr-3 text-blue-600"></i>Download Summary
+                                                    </a>
+                                                    {% endif %}
+                                                    
+                                                    {% if job.speech_file %}
+                                                    <button onclick="playAudio('{{ job.speech_file }}', '{{ job.id }}', 'Full Transcript'); toggleJobActions('{{ job.id }}')" 
+                                                            class="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left">
+                                                        <i class="fas fa-play mr-3 text-purple-600"></i>Play Full Audio
+                                                    </button>
+                                                    <a href="/download/speech/{{ job.speech_file }}" 
+                                                       class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                                        <i class="fas fa-download mr-3 text-purple-500"></i>Download Full Audio
+                                                    </a>
+                                                    {% endif %}
+                                                    
+                                                    {% if job.summary_speech_file %}
+                                                    <button onclick="playAudio('{{ job.summary_speech_file }}', '{{ job.id }}', 'Summary'); toggleJobActions('{{ job.id }}')" 
+                                                            class="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left">
+                                                        <i class="fas fa-play mr-3 text-indigo-600"></i>Play Summary Audio
+                                                    </button>
+                                                    <a href="/download/summary-speech/{{ job.summary_speech_file }}" 
+                                                       class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                                        <i class="fas fa-download mr-3 text-indigo-500"></i>Download Summary Audio
+                                                    </a>
+                                                    {% endif %}
+                                                    
+                                                    <!-- Separator -->
+                                                    <div class="border-t border-gray-200 my-2"></div>
+                                                    
+                                                    <!-- Delete Action -->
+                                                    <button onclick="deleteJob('{{ job.id }}'); toggleJobActions('{{ job.id }}')" 
+                                                            class="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50 text-left">
+                                                        <i class="fas fa-trash mr-3 text-red-600"></i>Delete Job
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    {% else %}
+                                        <!-- For non-completed jobs, just show delete -->
+                                        <button onclick="deleteJob('{{ job.id }}')" 
+                                                class="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors">
+                                            <i class="fas fa-trash mr-1"></i>Delete
                                         </button>
-                                        <a href="/download/speech/{{ job.speech_file }}" 
-                                           class="bg-purple-500 text-white px-3 py-1 rounded text-sm hover:bg-purple-600 transition-colors">
-                                            <i class="fas fa-download mr-1"></i>Save Full
-                                        </a>
-                                        {% endif %}
-                                        
-                                        {% if job.summary_speech_file %}
-                                        <button onclick="playAudio('{{ job.summary_speech_file }}', '{{ job.id }}', 'Summary')" 
-                                                class="bg-indigo-600 text-white px-3 py-1 rounded text-sm hover:bg-indigo-700 transition-colors">
-                                            <i class="fas fa-play mr-1"></i>Play Summary
-                                        </button>
-                                        <a href="/download/summary-speech/{{ job.summary_speech_file }}" 
-                                           class="bg-indigo-500 text-white px-3 py-1 rounded text-sm hover:bg-indigo-600 transition-colors">
-                                            <i class="fas fa-download mr-1"></i>Save Summary
-                                        </a>
-                                        {% endif %}
                                     {% endif %}
-                                    <button onclick="deleteJob('{{ job.id }}')" 
-                                            class="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors">
-                                        <i class="fas fa-trash mr-1"></i>Delete
-                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -702,6 +727,30 @@
         });
 
         // Auto-refresh every 30 seconds for processing jobs
+        // Toggle dropdown menu for job actions
+        function toggleJobActions(jobId) {
+            const dropdown = document.getElementById(`actions-${jobId}`);
+            const allDropdowns = document.querySelectorAll('[id^="actions-"]');
+            
+            // Close all other dropdowns
+            allDropdowns.forEach(dd => {
+                if (dd.id !== `actions-${jobId}`) {
+                    dd.classList.add('hidden');
+                }
+            });
+            
+            // Toggle current dropdown
+            dropdown.classList.toggle('hidden');
+        }
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('[onclick*="toggleJobActions"]') && !e.target.closest('[id^="actions-"]')) {
+                const allDropdowns = document.querySelectorAll('[id^="actions-"]');
+                allDropdowns.forEach(dd => dd.classList.add('hidden'));
+            }
+        });
+
         setInterval(() => {
             const processingJobs = document.querySelectorAll('.fa-spinner');
             if (processingJobs.length > 0) {
