@@ -283,6 +283,34 @@ async def extract_audio_from_video(video_path: str) -> Optional[str]:
         print(f"Error extracting audio: {str(e)}")
         return None
 
+async def convert_audio_to_wav(audio_path: str) -> Optional[str]:
+    """Convert audio file to WAV format using moviepy"""
+    try:
+        def _convert():
+            print(f"Converting audio file: {audio_path}")
+            
+            # Use moviepy to convert audio
+            from moviepy.editor import AudioFileClip
+            
+            audio_clip = AudioFileClip(audio_path)
+            temp_wav_path = f"temp_audio_{uuid.uuid4().hex}.wav"
+            
+            print(f"Converting to WAV: {temp_wav_path}")
+            audio_clip.write_audiofile(temp_wav_path, verbose=False, logger=None)
+            audio_clip.close()
+            
+            print(f"Audio conversion completed. Output file size: {os.path.getsize(temp_wav_path)} bytes")
+            return temp_wav_path
+        
+        result = await asyncio.to_thread(_convert)
+        return result
+        
+    except Exception as e:
+        print(f"Error converting audio: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 async def transcribe_audio(audio_path: str) -> Optional[str]:
     """Transcribe audio using Whisper - handles full length audio by chunking"""
     try:
@@ -540,6 +568,96 @@ async def process_video_background(job_id: str, video_path: str, filename: str, 
         # Clean up video file
         if os.path.exists(video_path):
             os.remove(video_path)
+
+async def process_audio_background(job_id: str, audio_path: str, filename: str, db: Session, summary_prompt: Optional[str] = None):
+    """Background task to process audio"""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    
+    try:
+        # Update status to processing
+        job.status = "processing"
+        db.commit()
+        
+        # Convert audio to WAV format if needed
+        file_extension = Path(filename).suffix.lower()
+        processed_audio_path = audio_path
+        
+        if file_extension != '.wav':
+            print(f"Converting {filename} to WAV format...")
+            processed_audio_path = await convert_audio_to_wav(audio_path)
+            if not processed_audio_path:
+                raise RuntimeError("Failed to convert audio to WAV format")
+        
+        # Transcribe audio
+        transcription = await transcribe_audio(processed_audio_path)
+        if not transcription:
+            raise RuntimeError("Failed to transcribe audio")
+        
+        # Save transcription
+        audio_basename = Path(filename).stem
+        transcript_filename = f"{audio_basename}_{job_id}_transcript.txt"
+        transcript_path = TRANSCRIPTS_DIR / transcript_filename
+        
+        async with aiofiles.open(transcript_path, 'w') as f:
+            await f.write(transcription)
+        
+        # Generate speech
+        speech_filename = f"{audio_basename}_{job_id}_speech.mp3"
+        speech_path = SPEECH_DIR / speech_filename
+        success = await text_to_speech(transcription, str(speech_path))
+        
+        if not success:
+            raise RuntimeError("Failed to generate speech")
+        
+        # Generate summary using DistilBART
+        print("📝 Generating summary using DistilBART...")
+        summary = await generate_summary(transcription, summary_prompt)
+        
+        summary_filename = None
+        summary_speech_filename = None
+        
+        if summary:
+            # Save summary
+            summary_filename = f"{audio_basename}_{job_id}_summary.txt"
+            summary_path = SUMMARIES_DIR / summary_filename
+            
+            async with aiofiles.open(summary_path, 'w') as f:
+                await f.write(summary)
+            
+            # Generate summary speech
+            summary_speech_filename = f"{audio_basename}_{job_id}_summary_speech.mp3"
+            summary_speech_path = SPEECH_DIR / summary_speech_filename
+            summary_speech_success = await text_to_speech(summary, str(summary_speech_path))
+            
+            if not summary_speech_success:
+                print("⚠️ Failed to generate summary speech, but continuing...")
+                summary_speech_filename = None
+        
+        # Update job with results
+        job.status = "completed"
+        job.transcription = transcription
+        job.transcript_file = transcript_filename
+        job.speech_file = speech_filename
+        job.summary = summary
+        job.summary_file = summary_filename
+        job.summary_speech_file = summary_speech_filename
+        job.summary_prompt = summary_prompt
+        job.completed_at = datetime.now(timezone.utc)
+        db.commit()
+        
+        # Clean up processed audio file if it's different from original
+        if processed_audio_path != audio_path and os.path.exists(processed_audio_path):
+            os.remove(processed_audio_path)
+        
+    except Exception as e:
+        job.status = "failed"
+        job.error_message = str(e)
+        db.commit()
+    
+    finally:
+        # Clean up original audio file
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
 
 async def process_youtube_background(job_id: str, youtube_url: str, db: Session, custom_prompt: Optional[str] = None):
     """Background task to process YouTube video"""
@@ -867,6 +985,48 @@ async def process_video(
     background_tasks.add_task(process_video_background, job.id, video_path, file.filename, db, summary_prompt)
     
     return {"job_id": job.id, "status": "pending", "message": "Video processing started"}
+
+@app.post("/api/process-audio/")
+async def process_audio(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    summary_prompt: Optional[str] = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Process uploaded audio file and return transcription and speech"""
+    if not user:
+        raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    # Validate file type - check both content type and file extension
+    valid_extensions = ['.mp3', '.wav', '.m4a', '.flac', '.ogg', '.aac', '.wma']
+    file_extension = Path(file.filename).suffix.lower()
+    
+    if not (file.content_type and file.content_type.startswith('audio/')) and file_extension not in valid_extensions:
+        raise HTTPException(status_code=400, detail=f"File must be an audio file. Supported formats: {', '.join(valid_extensions)}")
+    
+    # Create job in database
+    job = Job(
+        user_id=user.id,
+        filename=file.filename,
+        status="pending",
+        summary_prompt=summary_prompt,
+        created_at=datetime.now(timezone.utc)
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    
+    # Save uploaded file
+    audio_path = f"temp_audio_{job.id}.{file_extension[1:]}"  # Remove the dot from extension
+    async with aiofiles.open(audio_path, 'wb') as f:
+        content = await file.read()
+        await f.write(content)
+    
+    # Start background processing
+    background_tasks.add_task(process_audio_background, job.id, audio_path, file.filename, db, summary_prompt)
+    
+    return {"job_id": job.id, "status": "pending", "message": "Audio processing started"}
 
 @app.post("/api/process-youtube/")
 async def process_youtube(

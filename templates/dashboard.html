@@ -33,7 +33,7 @@
         <!-- Upload Section -->
         <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
             <h2 class="text-2xl font-semibold mb-4 text-gray-800">
-                <i class="fas fa-cloud-upload-alt text-blue-600 mr-2"></i>Process Video
+                <i class="fas fa-cloud-upload-alt text-blue-600 mr-2"></i>Process Media
             </h2>
             
             <!-- Tab Navigation -->
@@ -41,8 +41,11 @@
                 <button id="youtube-tab" onclick="switchTab('youtube')" class="pb-2 px-1 text-red-600 border-b-2 border-red-600 font-medium">
                     <i class="fab fa-youtube mr-1"></i>YouTube URL
                 </button>
-                <button id="file-tab" onclick="switchTab('file')" class="pb-2 px-1 text-gray-500 hover:text-gray-700 font-medium">
-                    <i class="fas fa-file-video mr-1"></i>Upload File
+                <button id="video-tab" onclick="switchTab('video')" class="pb-2 px-1 text-gray-500 hover:text-gray-700 font-medium">
+                    <i class="fas fa-file-video mr-1"></i>Upload Video
+                </button>
+                <button id="audio-tab" onclick="switchTab('audio')" class="pb-2 px-1 text-gray-500 hover:text-gray-700 font-medium">
+                    <i class="fas fa-file-audio mr-1"></i>Upload Audio
                 </button>
             </div>
             
@@ -62,7 +65,7 @@
                             </button>
                         </div>
                         <p class="text-xs text-gray-500 mt-1">
-                            Supports YouTube, YouTube Music, and YouTube Shorts URLs
+                            Supports YouTube and YouTube Shorts URLs
                         </p>
                     </div>
                     
@@ -95,14 +98,14 @@
                 </div>
             </div>
             
-            <!-- File Upload Tab -->
-            <div id="file-upload-section" class="hidden">
+            <!-- Video Upload Tab -->
+            <div id="video-upload-section" class="hidden">
                 <div class="space-y-4">
                     <div>
                         <label for="video-file" class="block text-sm font-medium text-gray-700 mb-2">
                             Video File
                         </label>
-                        <div id="upload-area" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer">
+                        <div id="video-upload-area" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer">
                             <i class="fas fa-file-video text-4xl text-gray-400 mb-4"></i>
                             <p class="text-gray-600 mb-2">Click to select or drag and drop your video file</p>
                             <p class="text-sm text-gray-500">Supports MP4, MOV, AVI, MKV, WebM and more</p>
@@ -111,10 +114,10 @@
                     </div>
                     
                     <div>
-                        <label for="file-summary-prompt" class="block text-sm font-medium text-gray-700 mb-2">
+                        <label for="video-summary-prompt" class="block text-sm font-medium text-gray-700 mb-2">
                             <i class="fas fa-brain mr-1 text-purple-600"></i>Custom Summary Prompt (Optional)
                         </label>
-                        <textarea id="file-summary-prompt" 
+                        <textarea id="video-summary-prompt" 
                                   placeholder="Enter a custom prompt to guide the AI summary. For example: 'Summarize the main points and actionable insights from this video.' Leave blank for default summary."
                                   rows="3"
                                   class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical"></textarea>
@@ -124,14 +127,56 @@
                     </div>
                 </div>
                 
-                <div id="upload-progress" class="hidden mt-4">
+                <div id="video-upload-progress" class="hidden mt-4">
                     <div class="bg-blue-50 rounded-lg p-4">
                         <div class="flex items-center justify-between mb-2">
-                            <span class="text-sm font-medium text-blue-700">Uploading...</span>
-                            <span id="progress-text" class="text-sm text-blue-600">0%</span>
+                            <span class="text-sm font-medium text-blue-700">Uploading video...</span>
+                            <span id="video-progress-text" class="text-sm text-blue-600">0%</span>
                         </div>
                         <div class="w-full bg-blue-200 rounded-full h-2">
-                            <div id="progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                            <div id="video-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Audio Upload Tab -->
+            <div id="audio-upload-section" class="hidden">
+                <div class="space-y-4">
+                    <div>
+                        <label for="audio-file" class="block text-sm font-medium text-gray-700 mb-2">
+                            Audio File
+                        </label>
+                        <div id="audio-upload-area" class="border-2 border-dashed border-green-300 rounded-lg p-8 text-center hover:border-green-400 transition-colors cursor-pointer">
+                            <i class="fas fa-file-audio text-4xl text-green-400 mb-4"></i>
+                            <p class="text-gray-600 mb-2">Click to select or drag and drop your audio file</p>
+                            <p class="text-sm text-gray-500">Supports MP3, WAV, M4A, FLAC, OGG and more</p>
+                            <input type="file" id="audio-file" accept="audio/*" class="hidden">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label for="audio-summary-prompt" class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-brain mr-1 text-purple-600"></i>Custom Summary Prompt (Optional)
+                        </label>
+                        <textarea id="audio-summary-prompt" 
+                                  placeholder="Enter a custom prompt to guide the AI summary. For example: 'Summarize the key points and main topics discussed in this audio.' Leave blank for default summary."
+                                  rows="3"
+                                  class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical"></textarea>
+                        <p class="text-xs text-gray-500 mt-1">
+                            <i class="fas fa-lightbulb mr-1"></i>Tip: Be specific about what aspects you want the summary to focus on
+                        </p>
+                    </div>
+                </div>
+                
+                <div id="audio-upload-progress" class="hidden mt-4">
+                    <div class="bg-green-50 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-green-700">Uploading audio...</span>
+                            <span id="audio-progress-text" class="text-sm text-green-600">0%</span>
+                        </div>
+                        <div class="w-full bg-green-200 rounded-full h-2">
+                            <div id="audio-progress-bar" class="bg-green-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
                         </div>
                     </div>
                 </div>
@@ -187,7 +232,7 @@
                                     <!-- Summary display inline -->
                                     {% if job.status == 'completed' and job.summary %}
                                     <div class="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                                        <h4 class="text-sm font-semibold text-blue-800 mb-2">
+                                        <h4 id="content-header-{{ job.id }}" class="text-sm font-semibold text-blue-800 mb-2">
                                             <i class="fas fa-brain mr-1"></i>AI Summary
                                             {% if job.summary_prompt %}
                                             <span class="text-xs font-normal text-purple-600 ml-2">
@@ -203,7 +248,52 @@
                                             <p class="text-xs text-purple-600 italic">"{{ job.summary_prompt }}"</p>
                                         </div>
                                         {% endif %}
-                                        <p class="text-sm text-blue-700">{{ job.summary }}</p>
+                                        
+                                        <!-- Content area that can switch between summary text and audio player -->
+                                        <div id="content-{{ job.id }}" class="w-full">
+                                            <p class="text-sm text-blue-700 leading-relaxed">{{ job.summary }}</p>
+                                        </div>
+                                        
+                                        <!-- Audio player template (hidden by default) -->
+                                        <div id="audio-player-{{ job.id }}" class="hidden w-full">
+                                            <div class="bg-white rounded-lg p-4 border border-gray-200 w-full">
+                                                <div class="flex items-center justify-between mb-3">
+                                                    <h5 id="audio-title-{{ job.id }}" class="font-medium text-gray-800">Audio Player</h5>
+                                                    <button onclick="showSummaryText('{{ job.id }}')" class="text-gray-500 hover:text-gray-700 text-sm">
+                                                        <i class="fas fa-times mr-1"></i>Close Player
+                                                    </button>
+                                                </div>
+                                                
+                                                <audio id="audio-element-{{ job.id }}" controls class="w-full mb-3" controlsList="nodownload">
+                                                    <source id="audio-source-{{ job.id }}" src="" type="audio/mpeg">
+                                                    Your browser does not support the audio element.
+                                                </audio>
+                                                
+                                                <!-- Progress Info -->
+                                                <div class="text-xs text-gray-600 mb-3">
+                                                    <div class="flex justify-between">
+                                                        <span id="current-time-{{ job.id }}">00:00</span>
+                                                        <span id="duration-{{ job.id }}">00:00</span>
+                                                    </div>
+                                                    <div class="mt-1">
+                                                        <span id="resume-info-{{ job.id }}"></span>
+                                                    </div>
+                                                </div>
+                                                
+                                                <!-- Speed Control -->
+                                                <div class="flex items-center justify-center space-x-2">
+                                                    <label for="speed-control-{{ job.id }}" class="text-xs text-gray-600">Speed:</label>
+                                                    <select id="speed-control-{{ job.id }}" onchange="changeSpeed('{{ job.id }}')" class="border border-gray-300 rounded px-2 py-1 text-xs">
+                                                        <option value="0.5">0.5x</option>
+                                                        <option value="0.75">0.75x</option>
+                                                        <option value="1" selected>1x</option>
+                                                        <option value="1.25">1.25x</option>
+                                                        <option value="1.5">1.5x</option>
+                                                        <option value="2">2x</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                     {% endif %}
                                 </div>
@@ -238,7 +328,7 @@
                                                 <div class="py-2">
                                                     {% if job.transcript_file %}
                                                     <a href="/download/transcript/{{ job.transcript_file }}" 
-                                                       onclick="setDefaultAction('{{ job.id }}', 'download', '/download/transcript/{{ job.transcript_file }}', 'Transcript', 'fas fa-file-alt', 'bg-green-600')"
+                                                       onclick="setDefaultAction('{{ job.id }}', 'download', '/download/transcript/{{ job.transcript_file }}', 'Transcript', 'fas fa-file-alt', 'bg-green-600'); toggleJobActions('{{ job.id }}')"
                                                        class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                                         <i class="fas fa-file-alt mr-3 text-green-600"></i>Download Transcript
                                                     </a>
@@ -246,35 +336,41 @@
                                                     
                                                     {% if job.summary_file %}
                                                     <a href="/download/summary/{{ job.summary_file }}" 
-                                                       onclick="setDefaultAction('{{ job.id }}', 'download', '/download/summary/{{ job.summary_file }}', 'Summary File', 'fas fa-brain', 'bg-blue-600')"
+                                                       onclick="setDefaultAction('{{ job.id }}', 'download', '/download/summary/{{ job.summary_file }}', 'Summary File', 'fas fa-brain', 'bg-blue-600'); toggleJobActions('{{ job.id }}')"
                                                        class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                                         <i class="fas fa-brain mr-3 text-blue-600"></i>Download Summary
                                                     </a>
                                                     {% endif %}
                                                     
                                                     {% if job.speech_file %}
-                                                    <button onclick="setDefaultAction('{{ job.id }}', 'play', '{{ job.speech_file }}', 'Full Audio', 'fas fa-play', 'bg-purple-600'); playAudio('{{ job.speech_file }}', '{{ job.id }}', 'Full Transcript'); toggleJobActions('{{ job.id }}')" 
+                                                    <button onclick="playInlineAudio('{{ job.id }}', '{{ job.speech_file }}', 'Full Transcript'); setTimeout(() => setDefaultAction('{{ job.id }}', 'play', '{{ job.speech_file }}', 'Full Audio', 'fas fa-play', 'bg-purple-600'), 100); toggleJobActions('{{ job.id }}')" 
                                                             class="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left">
                                                         <i class="fas fa-play mr-3 text-purple-600"></i>Play Full Audio
                                                     </button>
                                                     <a href="/download/speech/{{ job.speech_file }}" 
-                                                       onclick="setDefaultAction('{{ job.id }}', 'download', '/download/speech/{{ job.speech_file }}', 'Full Audio', 'fas fa-download', 'bg-purple-500')"
+                                                       onclick="setDefaultAction('{{ job.id }}', 'download', '/download/speech/{{ job.speech_file }}', 'Full Audio', 'fas fa-download', 'bg-purple-500'); toggleJobActions('{{ job.id }}')"
                                                        class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                                         <i class="fas fa-download mr-3 text-purple-500"></i>Download Full Audio
                                                     </a>
                                                     {% endif %}
                                                     
                                                     {% if job.summary_speech_file %}
-                                                    <button onclick="setDefaultAction('{{ job.id }}', 'play', '{{ job.summary_speech_file }}', 'Summary', 'fas fa-play', 'bg-indigo-600'); playAudio('{{ job.summary_speech_file }}', '{{ job.id }}', 'Summary'); toggleJobActions('{{ job.id }}')" 
+                                                    <button onclick="playInlineAudio('{{ job.id }}', '{{ job.summary_speech_file }}', 'Summary'); setTimeout(() => setDefaultAction('{{ job.id }}', 'play', '{{ job.summary_speech_file }}', 'Summary', 'fas fa-play', 'bg-indigo-600'), 100); toggleJobActions('{{ job.id }}')" 
                                                             class="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left">
                                                         <i class="fas fa-play mr-3 text-indigo-600"></i>Play Summary Audio
                                                     </button>
                                                     <a href="/download/summary-speech/{{ job.summary_speech_file }}" 
-                                                       onclick="setDefaultAction('{{ job.id }}', 'download', '/download/summary-speech/{{ job.summary_speech_file }}', 'Summary Audio', 'fas fa-download', 'bg-indigo-500')"
+                                                       onclick="setDefaultAction('{{ job.id }}', 'download', '/download/summary-speech/{{ job.summary_speech_file }}', 'Summary Audio', 'fas fa-download', 'bg-indigo-500'); toggleJobActions('{{ job.id }}')"
                                                        class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                                         <i class="fas fa-download mr-3 text-indigo-500"></i>Download Summary Audio
                                                     </a>
                                                     {% endif %}
+                                                    
+                                                    <!-- Show Summary Text Option -->
+                                                    <button onclick="showSummaryText('{{ job.id }}'); setDefaultAction('{{ job.id }}', 'view', '#', 'View Summary', 'fas fa-eye', 'bg-blue-600'); toggleJobActions('{{ job.id }}')" 
+                                                            class="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left">
+                                                        <i class="fas fa-eye mr-3 text-blue-600"></i>Show Summary Text
+                                                    </button>
                                                     
                                                     <!-- Separator -->
                                                     <div class="border-t border-gray-200 my-2"></div>
@@ -376,37 +472,76 @@
         let updateTimeInterval = null;
 
         // File upload handling
-        const uploadArea = document.getElementById('upload-area');
-        const fileInput = document.getElementById('video-file');
-        const progressDiv = document.getElementById('upload-progress');
-        const progressBar = document.getElementById('progress-bar');
-        const progressText = document.getElementById('progress-text');
+        const videoUploadArea = document.getElementById('video-upload-area');
+        const videoFileInput = document.getElementById('video-file');
+        const videoProgressDiv = document.getElementById('video-upload-progress');
+        const videoProgressBar = document.getElementById('video-progress-bar');
+        const videoProgressText = document.getElementById('video-progress-text');
 
-        uploadArea.addEventListener('click', () => fileInput.click());
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('border-blue-400', 'bg-blue-50');
-        });
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('border-blue-400', 'bg-blue-50');
-        });
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('border-blue-400', 'bg-blue-50');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                handleFileUpload(files[0]);
-            }
-        });
+        const audioUploadArea = document.getElementById('audio-upload-area');
+        const audioFileInput = document.getElementById('audio-file');
+        const audioProgressDiv = document.getElementById('audio-upload-progress');
+        const audioProgressBar = document.getElementById('audio-progress-bar');
+        const audioProgressText = document.getElementById('audio-progress-text');
 
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleFileUpload(e.target.files[0]);
-            }
-        });
+        // Video upload area handlers
+        if (videoUploadArea) {
+            videoUploadArea.addEventListener('click', () => videoFileInput.click());
+            videoUploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                videoUploadArea.classList.add('border-blue-400', 'bg-blue-50');
+            });
+            videoUploadArea.addEventListener('dragleave', () => {
+                videoUploadArea.classList.remove('border-blue-400', 'bg-blue-50');
+            });
+            videoUploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                videoUploadArea.classList.remove('border-blue-400', 'bg-blue-50');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleVideoUpload(files[0]);
+                }
+            });
+        }
 
-        async function handleFileUpload(file) {
-            const summaryPrompt = document.getElementById('file-summary-prompt').value.trim();
+        // Audio upload area handlers
+        if (audioUploadArea) {
+            audioUploadArea.addEventListener('click', () => audioFileInput.click());
+            audioUploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                audioUploadArea.classList.add('border-green-400', 'bg-green-50');
+            });
+            audioUploadArea.addEventListener('dragleave', () => {
+                audioUploadArea.classList.remove('border-green-400', 'bg-green-50');
+            });
+            audioUploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                audioUploadArea.classList.remove('border-green-400', 'bg-green-50');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleAudioUpload(files[0]);
+                }
+            });
+        }
+
+        if (videoFileInput) {
+            videoFileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleVideoUpload(e.target.files[0]);
+                }
+            });
+        }
+
+        if (audioFileInput) {
+            audioFileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleAudioUpload(e.target.files[0]);
+                }
+            });
+        }
+
+        async function handleVideoUpload(file) {
+            const summaryPrompt = document.getElementById('video-summary-prompt').value.trim();
             const formData = new FormData();
             formData.append('file', file);
             
@@ -415,7 +550,7 @@
                 formData.append('custom_prompt', summaryPrompt);
             }
 
-            progressDiv.classList.remove('hidden');
+            videoProgressDiv.classList.remove('hidden');
             
             try {
                 const response = await axios.post('/api/process-video/', formData, {
@@ -425,49 +560,100 @@
                     },
                     onUploadProgress: (progressEvent) => {
                         const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-                        progressBar.style.width = percentCompleted + '%';
-                        progressText.textContent = percentCompleted + '%';
+                        videoProgressBar.style.width = percentCompleted + '%';
+                        videoProgressText.textContent = percentCompleted + '%';
                     }
                 });
 
                 if (response.data.job_id) {
                     alert('Video uploaded successfully! Processing started.');
-                    document.getElementById('file-summary-prompt').value = '';
+                    document.getElementById('video-summary-prompt').value = '';
                     setTimeout(refreshJobs, 1000);
                 }
             } catch (error) {
                 alert('Upload failed: ' + (error.response?.data?.detail || error.message));
             } finally {
-                progressDiv.classList.add('hidden');
-                progressBar.style.width = '0%';
-                progressText.textContent = '0%';
-                fileInput.value = '';
+                videoProgressDiv.classList.add('hidden');
+                videoProgressBar.style.width = '0%';
+                videoProgressText.textContent = '0%';
+                videoFileInput.value = '';
+            }
+        }
+
+        async function handleAudioUpload(file) {
+            const summaryPrompt = document.getElementById('audio-summary-prompt').value.trim();
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            // Only include custom prompt if provided
+            if (summaryPrompt) {
+                formData.append('custom_prompt', summaryPrompt);
+            }
+
+            audioProgressDiv.classList.remove('hidden');
+            
+            try {
+                const response = await axios.post('/api/process-audio/', formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                        'Authorization': `Bearer {{ user.email }}`
+                    },
+                    onUploadProgress: (progressEvent) => {
+                        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                        audioProgressBar.style.width = percentCompleted + '%';
+                        audioProgressText.textContent = percentCompleted + '%';
+                    }
+                });
+
+                if (response.data.job_id) {
+                    alert('Audio uploaded successfully! Processing started.');
+                    document.getElementById('audio-summary-prompt').value = '';
+                    setTimeout(refreshJobs, 1000);
+                }
+            } catch (error) {
+                alert('Upload failed: ' + (error.response?.data?.detail || error.message));
+            } finally {
+                audioProgressDiv.classList.add('hidden');
+                audioProgressBar.style.width = '0%';
+                audioProgressText.textContent = '0%';
+                audioFileInput.value = '';
             }
         }
 
         // Tab switching functionality
         function switchTab(tabName) {
-            const fileTab = document.getElementById('file-tab');
+            const videoTab = document.getElementById('video-tab');
+            const audioTab = document.getElementById('audio-tab');
             const youtubeTab = document.getElementById('youtube-tab');
-            const fileSection = document.getElementById('file-upload-section');
+            const videoSection = document.getElementById('video-upload-section');
+            const audioSection = document.getElementById('audio-upload-section');
             const youtubeSection = document.getElementById('youtube-url-section');
 
-            if (tabName === 'file') {
-                fileTab.classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
-                fileTab.classList.remove('text-gray-500');
-                youtubeTab.classList.add('text-gray-500');
-                youtubeTab.classList.remove('text-red-600', 'border-b-2', 'border-red-600');
-                
-                fileSection.classList.remove('hidden');
-                youtubeSection.classList.add('hidden');
+            // Reset all tabs
+            [videoTab, audioTab, youtubeTab].forEach(tab => {
+                if (tab) {
+                    tab.classList.remove('text-blue-600', 'text-green-600', 'text-red-600', 'border-b-2', 'border-blue-600', 'border-green-600', 'border-red-600');
+                    tab.classList.add('text-gray-500');
+                }
+            });
+
+            // Hide all sections
+            [videoSection, audioSection, youtubeSection].forEach(section => {
+                if (section) section.classList.add('hidden');
+            });
+
+            if (tabName === 'video') {
+                videoTab.classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
+                videoTab.classList.remove('text-gray-500');
+                videoSection.classList.remove('hidden');
+            } else if (tabName === 'audio') {
+                audioTab.classList.add('text-green-600', 'border-b-2', 'border-green-600');
+                audioTab.classList.remove('text-gray-500');
+                audioSection.classList.remove('hidden');
             } else if (tabName === 'youtube') {
                 youtubeTab.classList.add('text-red-600', 'border-b-2', 'border-red-600');
                 youtubeTab.classList.remove('text-gray-500');
-                fileTab.classList.add('text-gray-500');
-                fileTab.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
-                
                 youtubeSection.classList.remove('hidden');
-                fileSection.classList.add('hidden');
             }
         }
 
@@ -567,127 +753,116 @@
             }
         }
 
-        // Audio Player Functions
-        function playAudio(speechFile, jobId, audioType = 'Audio') {
-            const modal = document.getElementById('audio-modal');
-            const audioPlayer = document.getElementById('audio-player');
-            const audioSource = document.getElementById('audio-source');
-            const audioTitle = document.getElementById('audio-title');
-            const resumeInfo = document.getElementById('resume-info');
+        // Inline Audio Player Functions
+        function playInlineAudio(jobId, speechFile, audioType = 'Audio') {
+            const contentDiv = document.getElementById(`content-${jobId}`);
+            const audioPlayerDiv = document.getElementById(`audio-player-${jobId}`);
+            const audioElement = document.getElementById(`audio-element-${jobId}`);
+            const audioSource = document.getElementById(`audio-source-${jobId}`);
+            const audioTitle = document.getElementById(`audio-title-${jobId}`);
+            const resumeInfo = document.getElementById(`resume-info-${jobId}`);
+            const contentHeader = document.getElementById(`content-header-${jobId}`);
 
-            // Set audio source and title based on type
+            // Hide summary text and show audio player
+            contentDiv.classList.add('hidden');
+            audioPlayerDiv.classList.remove('hidden');
+
+            // Update the main heading to show what's playing
             if (audioType === 'Summary') {
+                contentHeader.innerHTML = '<i class="fas fa-play mr-1 text-indigo-600"></i>Playing Summary Audio';
                 audioSource.src = `/download/summary-speech/${speechFile}`;
-                audioTitle.textContent = `Playing Summary: ${speechFile}`;
-            } else {
+                audioTitle.textContent = `Summary Audio`;
+            } else if (audioType === 'Full Transcript') {
+                contentHeader.innerHTML = '<i class="fas fa-play mr-1 text-purple-600"></i>Playing Full Audio';
                 audioSource.src = `/download/speech/${speechFile}`;
-                audioTitle.textContent = `Playing ${audioType}: ${speechFile}`;
+                audioTitle.textContent = `Full Audio`;
+            } else {
+                contentHeader.innerHTML = `<i class="fas fa-play mr-1 text-blue-600"></i>Playing ${audioType}`;
+                audioSource.src = `/download/speech/${speechFile}`;
+                audioTitle.textContent = audioType;
             }
-            audioPlayer.load();
-
-            // Set current job ID for localStorage (use different keys for different audio types)
-            currentJobId = `${jobId}_${audioType.toLowerCase().replace(' ', '_')}`;
-            currentAudio = audioPlayer;
+            
+            audioElement.load();
 
             // Check for saved position
-            const savedTime = localStorage.getItem(`audio_position_${jobId}`);
+            const savedTime = localStorage.getItem(`audio_position_${jobId}_${audioType.toLowerCase().replace(' ', '_')}`);
             if (savedTime && parseFloat(savedTime) > 0) {
                 const minutes = Math.floor(savedTime / 60);
                 const seconds = Math.floor(savedTime % 60);
                 resumeInfo.textContent = `Resuming from ${minutes}:${seconds.toString().padStart(2, '0')}`;
                 
                 // Set the saved time when metadata loads
-                audioPlayer.addEventListener('loadedmetadata', function setTime() {
-                    audioPlayer.currentTime = parseFloat(savedTime);
-                    audioPlayer.removeEventListener('loadedmetadata', setTime);
+                audioElement.addEventListener('loadedmetadata', function setTime() {
+                    audioElement.currentTime = parseFloat(savedTime);
+                    audioElement.removeEventListener('loadedmetadata', setTime);
                 }, { once: true });
             } else {
                 resumeInfo.textContent = 'Starting from beginning';
             }
 
-            // Show modal
-            modal.classList.remove('hidden');
-
-            // Setup event listeners
-            setupAudioEventListeners();
+            // Setup event listeners for this specific audio element
+            setupInlineAudioEventListeners(jobId, audioType);
         }
 
-        function setupAudioEventListeners() {
-            const audioPlayer = document.getElementById('audio-player');
-            const playPauseBtn = document.getElementById('play-pause-btn');
-            const currentTimeSpan = document.getElementById('current-time');
-            const durationSpan = document.getElementById('duration');
+        function showSummaryText(jobId) {
+            const contentDiv = document.getElementById(`content-${jobId}`);
+            const audioPlayerDiv = document.getElementById(`audio-player-${jobId}`);
+            const audioElement = document.getElementById(`audio-element-${jobId}`);
+            const contentHeader = document.getElementById(`content-header-${jobId}`);
 
-            // Update play/pause button
-            audioPlayer.addEventListener('play', () => {
-                playPauseBtn.innerHTML = '<i class="fas fa-pause"></i>';
-                startTimeUpdater();
-            });
+            // Pause audio if playing
+            if (!audioElement.paused) {
+                audioElement.pause();
+            }
 
-            audioPlayer.addEventListener('pause', () => {
-                playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
-                stopTimeUpdater();
-            });
+            // Restore the original heading
+            contentHeader.innerHTML = '<i class="fas fa-brain mr-1"></i>AI Summary';
+
+            // Show summary text and hide audio player
+            audioPlayerDiv.classList.add('hidden');
+            contentDiv.classList.remove('hidden');
+        }
+
+        function setupInlineAudioEventListeners(jobId, audioType) {
+            const audioElement = document.getElementById(`audio-element-${jobId}`);
+            const currentTimeSpan = document.getElementById(`current-time-${jobId}`);
+            const durationSpan = document.getElementById(`duration-${jobId}`);
 
             // Update duration when metadata loads
-            audioPlayer.addEventListener('loadedmetadata', () => {
-                durationSpan.textContent = formatTime(audioPlayer.duration);
+            audioElement.addEventListener('loadedmetadata', () => {
+                durationSpan.textContent = formatTime(audioElement.duration);
             });
 
             // Save position periodically and on time update
-            audioPlayer.addEventListener('timeupdate', () => {
-                currentTimeSpan.textContent = formatTime(audioPlayer.currentTime);
+            audioElement.addEventListener('timeupdate', () => {
+                currentTimeSpan.textContent = formatTime(audioElement.currentTime);
                 
                 // Save position to localStorage every second
-                if (currentJobId && audioPlayer.currentTime > 0) {
-                    localStorage.setItem(`audio_position_${currentJobId}`, audioPlayer.currentTime);
+                if (audioElement.currentTime > 0) {
+                    const storageKey = `audio_position_${jobId}_${audioType.toLowerCase().replace(' ', '_')}`;
+                    localStorage.setItem(storageKey, audioElement.currentTime);
                 }
             });
 
             // Clear saved position when audio ends
-            audioPlayer.addEventListener('ended', () => {
-                if (currentJobId) {
-                    localStorage.removeItem(`audio_position_${currentJobId}`);
-                }
-                playPauseBtn.innerHTML = '<i class="fas fa-play"></i>';
-                stopTimeUpdater();
+            audioElement.addEventListener('ended', () => {
+                const storageKey = `audio_position_${jobId}_${audioType.toLowerCase().replace(' ', '_')}`;
+                localStorage.removeItem(storageKey);
             });
         }
 
-        function closeAudioPlayer() {
-            const modal = document.getElementById('audio-modal');
-            const audioPlayer = document.getElementById('audio-player');
-            
-            // Save current position before closing
-            if (currentJobId && audioPlayer.currentTime > 0) {
-                localStorage.setItem(`audio_position_${currentJobId}`, audioPlayer.currentTime);
-            }
-            
-            audioPlayer.pause();
-            modal.classList.add('hidden');
-            stopTimeUpdater();
-            currentAudio = null;
-            currentJobId = null;
-        }
-
-        function togglePlayPause() {
-            const audioPlayer = document.getElementById('audio-player');
-            if (audioPlayer.paused) {
-                audioPlayer.play();
+        function changeSpeed(jobId = null) {
+            if (jobId) {
+                // Inline audio player
+                const audioElement = document.getElementById(`audio-element-${jobId}`);
+                const speedControl = document.getElementById(`speed-control-${jobId}`);
+                audioElement.playbackRate = parseFloat(speedControl.value);
             } else {
-                audioPlayer.pause();
+                // Modal audio player
+                const audioPlayer = document.getElementById('audio-player');
+                const speedControl = document.getElementById('speed-control');
+                audioPlayer.playbackRate = parseFloat(speedControl.value);
             }
-        }
-
-        function seekAudio(seconds) {
-            const audioPlayer = document.getElementById('audio-player');
-            audioPlayer.currentTime = Math.max(0, Math.min(audioPlayer.duration, audioPlayer.currentTime + seconds));
-        }
-
-        function changeSpeed() {
-            const audioPlayer = document.getElementById('audio-player');
-            const speedControl = document.getElementById('speed-control');
-            audioPlayer.playbackRate = parseFloat(speedControl.value);
         }
 
         function formatTime(seconds) {
@@ -752,12 +927,12 @@
         function performDefaultAction(jobId, file, audioType) {
             const action = defaultActions[jobId];
             if (action && action.type === 'play') {
-                playAudio(file, jobId, audioType);
+                playInlineAudio(jobId, file, audioType);
             } else if (action && action.type === 'download') {
                 window.location.href = action.url;
             } else {
-                // Default fallback - play summary audio
-                playAudio(file, jobId, audioType);
+                // Default fallback - play summary audio inline
+                playInlineAudio(jobId, file, audioType);
             }
         }
 
@@ -773,9 +948,6 @@
 
             // Update the button appearance
             updateDefaultButton(jobId, actionType, displayName, iconClass, bgColorClass);
-            
-            // Close the dropdown
-            toggleJobActions(jobId);
         }
 
         function updateDefaultButton(jobId, actionType, displayName, iconClass, bgColorClass) {
@@ -807,6 +979,8 @@
                 // Update onclick for the main button based on action type
                 if (actionType === 'play') {
                     mainButton.setAttribute('onclick', `performDefaultAction('${jobId}', '${defaultActions[jobId].url}', '${displayName}')`);
+                } else if (actionType === 'view') {
+                    mainButton.setAttribute('onclick', `showSummaryText('${jobId}')`);
                 } else {
                     mainButton.setAttribute('onclick', `window.location.href='${defaultActions[jobId].url}'`);
                 }

@@ -84,6 +84,30 @@ def extract_audio_from_video(video_path: str) -> Optional[str]:
         traceback.print_exc()
         return None
 
+def convert_audio_to_wav(audio_path: str) -> Optional[str]:
+    """Convert audio file to WAV format using moviepy"""
+    try:
+        print(f"Converting audio file: {audio_path}")
+        
+        # Use moviepy to convert audio
+        from moviepy.editor import AudioFileClip
+        
+        audio_clip = AudioFileClip(audio_path)
+        temp_wav_path = f"temp_audio_{uuid.uuid4().hex}.wav"
+        
+        print(f"Converting to WAV: {temp_wav_path}")
+        audio_clip.write_audiofile(temp_wav_path, verbose=False, logger=None)
+        audio_clip.close()
+        
+        print(f"Audio conversion completed. Output file size: {os.path.getsize(temp_wav_path)} bytes")
+        return temp_wav_path
+        
+    except Exception as e:
+        print(f"Error converting audio: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 def transcribe_audio(audio_path: str) -> Optional[str]:
     """Transcribe audio using Whisper - handles full length audio by chunking"""
     try:
@@ -223,6 +247,84 @@ async def process_video(file: UploadFile = File(...)):
             os.remove(video_path)
         if 'audio_path' in locals() and audio_path and os.path.exists(audio_path):
             os.remove(audio_path)
+
+@app.post("/process-audio/")
+async def process_audio(file: UploadFile = File(...)):
+    """Process uploaded audio file and return transcription and speech"""
+    
+    # Validate file type - check both content type and file extension
+    valid_extensions = ['.mp3', '.wav', '.m4a', '.flac', '.ogg', '.aac', '.wma']
+    file_extension = Path(file.filename).suffix.lower()
+    
+    if not (file.content_type and file.content_type.startswith('audio/')) and file_extension not in valid_extensions:
+        raise HTTPException(status_code=400, detail=f"File must be an audio file. Supported formats: {', '.join(valid_extensions)}")
+    
+    # Generate unique ID for this processing job
+    job_id = uuid.uuid4().hex
+    
+    # Create temporary file for uploaded audio
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{job_id}.{file.filename.split('.')[-1]}") as tmp_audio:
+            shutil.copyfileobj(file.file, tmp_audio)
+            audio_path = tmp_audio.name
+        
+        print(f"Audio uploaded to: {audio_path}")
+        print(f"Uploaded file size: {os.path.getsize(audio_path)} bytes")
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {str(e)}")
+    
+    try:
+        # Get base filename
+        audio_basename = Path(file.filename).stem
+        
+        # Convert audio to WAV format for processing if needed
+        processed_audio_path = audio_path
+        if file_extension.lower() != '.wav':
+            print(f"Converting {file.filename} to WAV format...")
+            processed_audio_path = convert_audio_to_wav(audio_path)
+            if not processed_audio_path:
+                raise HTTPException(status_code=500, detail="Failed to convert audio to WAV format")
+        
+        # Transcribe audio
+        print("Transcribing audio...")
+        transcription = transcribe_audio(processed_audio_path)
+        if not transcription:
+            raise HTTPException(status_code=500, detail="Failed to transcribe audio")
+        
+        # Save transcription
+        transcript_filename = f"{audio_basename}_{job_id}_transcript.txt"
+        transcript_path = TRANSCRIPTS_DIR / transcript_filename
+        with open(transcript_path, 'w') as f:
+            f.write(transcription)
+        
+        # Generate speech
+        print("Converting to speech...")
+        speech_filename = f"{audio_basename}_{job_id}_speech.mp3"
+        speech_path = SPEECH_DIR / speech_filename
+        success = text_to_speech(transcription, str(speech_path))
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to generate speech")
+        
+        return {
+            "job_id": job_id,
+            "filename": file.filename,
+            "transcription": transcription,
+            "transcript_file": transcript_filename,
+            "speech_file": speech_filename,
+            "download_urls": {
+                "transcript": f"/download/transcript/{transcript_filename}",
+                "speech": f"/download/speech/{speech_filename}"
+            }
+        }
+    
+    finally:
+        # Clean up temporary files
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+        if 'processed_audio_path' in locals() and processed_audio_path != audio_path and processed_audio_path and os.path.exists(processed_audio_path):
+            os.remove(processed_audio_path)
 
 @app.get("/download/transcript/{filename}")
 async def download_transcript(filename: str):
