@@ -37,6 +37,7 @@ class Job(Base):
     summary = Column(Text)
     summary_file = Column(String)
     summary_speech_file = Column(String)
+    summary_prompt = Column(Text)  # Custom prompt for summary generation
     error_message = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True))

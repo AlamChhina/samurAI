@@ -27,6 +27,7 @@ import yt_dlp
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
+from transformers import pipeline
 
 # Python 3.13 compatibility for audio modules
 try:
@@ -69,9 +70,11 @@ templates = Jinja2Templates(directory="templates")
 
 # Configuration
 MODEL_ID = "openai/whisper-base"
+SUMMARIZATION_MODEL_ID = "sshleifer/distilbart-cnn-12-6"  # Lightweight BART model for summarization
 OUTPUT_DIR = Path("./outputs")
 TRANSCRIPTS_DIR = OUTPUT_DIR / "transcripts"
 SPEECH_DIR = OUTPUT_DIR / "speech"
+SUMMARIES_DIR = OUTPUT_DIR / "summaries"
 
 # Google OAuth settings
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "your-google-client-id")
@@ -82,6 +85,7 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/au
 PREFERRED_VOICE = os.getenv("PREFERRED_VOICE", "en-US-AriaNeural")  # High-quality edge-tts voice
 
 print("🔊 TTS Engine: Edge-TTS (Microsoft Neural Voices) ✅")
+print("📝 Summarization: DistilBART (Lightweight & Efficient) ✅")
 
 # Debug: Print loaded values (remove in production)
 print("🔍 Debug - Loaded OAuth config:")
@@ -102,6 +106,7 @@ else:
 # Create output directories
 TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
 SPEECH_DIR.mkdir(parents=True, exist_ok=True)
+SUMMARIES_DIR.mkdir(parents=True, exist_ok=True)
 
 # Set up device for Apple Silicon optimization
 if torch.backends.mps.is_available():
@@ -117,6 +122,7 @@ else:
 # Global variables for model caching
 processor = None
 model = None
+summarizer = None
 security = HTTPBearer(auto_error=False)
 
 class JobResponse(BaseModel):
@@ -127,9 +133,21 @@ class JobResponse(BaseModel):
     transcription: Optional[str] = None
     transcript_file: Optional[str] = None
     speech_file: Optional[str] = None
+    summary: Optional[str] = None
+    summary_file: Optional[str] = None
+    summary_speech_file: Optional[str] = None
+    summary_prompt: Optional[str] = None
 
 class YouTubeRequest(BaseModel):
     url: str
+    summary_prompt: Optional[str] = None
+
+class VideoUploadRequest(BaseModel):
+    summary_prompt: Optional[str] = None
+
+class SummaryRequest(BaseModel):
+    job_id: str
+    summary_prompt: str
 
 def load_model():
     """Load Whisper model and processor (cached)"""
@@ -437,7 +455,7 @@ async def text_to_speech(text: str, output_path: str) -> bool:
     print("❌ All TTS engines failed")
     return False
 
-async def process_video_background(job_id: str, video_path: str, filename: str, db: Session):
+async def process_video_background(job_id: str, video_path: str, filename: str, db: Session, custom_prompt: Optional[str] = None):
     """Background task to process video"""
     job = db.query(Job).filter(Job.id == job_id).first()
     
@@ -472,11 +490,40 @@ async def process_video_background(job_id: str, video_path: str, filename: str, 
         if not success:
             raise RuntimeError("Failed to generate speech")
         
+        # Generate summary using DistilBART
+        print("📝 Generating summary using DistilBART...")
+        summary = await generate_summary(transcription, custom_prompt)
+        
+        summary_filename = None
+        summary_speech_filename = None
+        
+        if summary:
+            # Save summary
+            summary_filename = f"{video_basename}_{job_id}_summary.txt"
+            summary_path = SUMMARIES_DIR / summary_filename
+            
+            async with aiofiles.open(summary_path, 'w') as f:
+                await f.write(summary)
+            
+            # Generate speech for summary
+            print("🎵 Generating speech for summary...")
+            summary_speech_filename = f"{video_basename}_{job_id}_summary_speech.mp3"
+            summary_speech_path = SPEECH_DIR / summary_speech_filename
+            summary_speech_success = await text_to_speech(summary, str(summary_speech_path))
+            
+            if not summary_speech_success:
+                print("⚠️ Failed to generate summary speech, but continuing...")
+                summary_speech_filename = None
+        
         # Update job with results
         job.status = "completed"
         job.transcription = transcription
         job.transcript_file = transcript_filename
         job.speech_file = speech_filename
+        job.summary = summary
+        job.summary_file = summary_filename
+        job.summary_speech_file = summary_speech_filename
+        job.summary_prompt = custom_prompt
         job.completed_at = datetime.now(timezone.utc)
         db.commit()
         
@@ -494,7 +541,7 @@ async def process_video_background(job_id: str, video_path: str, filename: str, 
         if os.path.exists(video_path):
             os.remove(video_path)
 
-async def process_youtube_background(job_id: str, youtube_url: str, db: Session):
+async def process_youtube_background(job_id: str, youtube_url: str, db: Session, custom_prompt: Optional[str] = None):
     """Background task to process YouTube video"""
     job = db.query(Job).filter(Job.id == job_id).first()
     video_path = None
@@ -553,7 +600,33 @@ async def process_youtube_background(job_id: str, youtube_url: str, db: Session)
         async with aiofiles.open(transcript_path, 'w') as f:
             await f.write(transcription)
         
-        # Generate speech
+        # Generate summary using DistilBART
+        print("📝 Generating summary using DistilBART...")
+        summary = await generate_summary(transcription, custom_prompt)
+        
+        summary_filename = None
+        summary_speech_filename = None
+        
+        if summary:
+            # Save summary
+            summary_filename = f"{safe_title}_{job_id}_summary.txt"
+            summary_path = SUMMARIES_DIR / summary_filename
+            
+            async with aiofiles.open(summary_path, 'w') as f:
+                await f.write(summary)
+            
+            # Generate speech for summary
+            print("🎵 Generating speech for summary...")
+            summary_speech_filename = f"{safe_title}_{job_id}_summary_speech.mp3"
+            summary_speech_path = SPEECH_DIR / summary_speech_filename
+            summary_speech_success = await text_to_speech(summary, str(summary_speech_path))
+            
+            if not summary_speech_success:
+                print("⚠️ Failed to generate summary speech, but continuing...")
+                summary_speech_filename = None
+        
+        # Generate speech for full transcript
+        print("🎵 Generating speech for full transcript...")
         speech_filename = f"{safe_title}_{job_id}_speech.mp3"
         speech_path = SPEECH_DIR / speech_filename
         success = await text_to_speech(transcription, str(speech_path))
@@ -566,6 +639,10 @@ async def process_youtube_background(job_id: str, youtube_url: str, db: Session)
         job.transcription = transcription
         job.transcript_file = transcript_filename
         job.speech_file = speech_filename
+        job.summary = summary
+        job.summary_file = summary_filename
+        job.summary_speech_file = summary_speech_filename
+        job.summary_prompt = custom_prompt
         job.completed_at = datetime.now(timezone.utc)
         db.commit()
         
@@ -754,6 +831,7 @@ async def dashboard(request: Request, user: User = Depends(get_current_user), db
 async def process_video(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    summary_prompt: Optional[str] = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -772,7 +850,8 @@ async def process_video(
     job = Job(
         user_id=user.id,
         filename=file.filename,
-        status="pending"
+        status="pending",
+        summary_prompt=summary_prompt
     )
     db.add(job)
     db.commit()
@@ -785,7 +864,7 @@ async def process_video(
         await f.write(content)
     
     # Start background processing
-    background_tasks.add_task(process_video_background, job.id, video_path, file.filename, db)
+    background_tasks.add_task(process_video_background, job.id, video_path, file.filename, db, summary_prompt)
     
     return {"job_id": job.id, "status": "pending", "message": "Video processing started"}
 
@@ -808,14 +887,15 @@ async def process_youtube(
     job = Job(
         user_id=user.id,
         filename=f"YouTube: {request.url}",
-        status="pending"
+        status="pending",
+        summary_prompt=request.summary_prompt
     )
     db.add(job)
     db.commit()
     db.refresh(job)
     
     # Start background processing for YouTube
-    background_tasks.add_task(process_youtube_background, job.id, request.url, db)
+    background_tasks.add_task(process_youtube_background, job.id, request.url, db, request.summary_prompt)
     
     return {"job_id": job.id, "status": "pending", "message": "YouTube video processing started"}
 
@@ -864,6 +944,30 @@ async def download_speech(filename: str, user: User = Depends(get_current_user),
     
     return FileResponse(file_path, filename=filename)
 
+@app.get("/download/summary/{filename}")
+async def download_summary(filename: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Download summary file"""
+    if not user:
+        raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    file_path = SUMMARIES_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=FILE_NOT_FOUND_MSG)
+    
+    return FileResponse(file_path, filename=filename)
+
+@app.get("/download/summary-speech/{filename}")
+async def download_summary_speech(filename: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Download summary speech file"""
+    if not user:
+        raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    file_path = SPEECH_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=FILE_NOT_FOUND_MSG)
+    
+    return FileResponse(file_path, filename=filename)
+
 @app.delete("/api/jobs/{job_id}")
 async def delete_job(job_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Delete job and associated files"""
@@ -885,12 +989,265 @@ async def delete_job(job_id: str, user: User = Depends(get_current_user), db: Se
         if speech_path.exists():
             speech_path.unlink()
     
+    if job.summary_file:
+        summary_path = SUMMARIES_DIR / job.summary_file
+        if summary_path.exists():
+            summary_path.unlink()
+    
+    if job.summary_speech_file:
+        summary_speech_path = SPEECH_DIR / job.summary_speech_file
+        if summary_speech_path.exists():
+            summary_speech_path.unlink()
+    
+    if job.summary_file:
+        summary_path = SUMMARIES_DIR / job.summary_file
+        if summary_path.exists():
+            summary_path.unlink()
+    
+    if job.summary_speech_file:
+        summary_speech_path = SPEECH_DIR / job.summary_speech_file
+        if summary_speech_path.exists():
+            summary_speech_path.unlink()
+    
     # Delete job from database
     db.delete(job)
     db.commit()
     
     return {"message": "Job deleted successfully"}
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+def load_summarizer():
+    """Load DistilBART model for text summarization (cached)"""
+    global summarizer
+    if summarizer is None:
+        print("Loading DistilBART summarization model...")
+        try:
+            # Use DistilBART for text summarization - lightweight and efficient
+            if device.type == "mps":
+                model_device = 0 if torch.backends.mps.is_available() else -1
+            elif device.type == "cuda":
+                model_device = 0
+            else:
+                model_device = -1  # CPU
+                
+            # Load the summarization pipeline with DistilBART
+            summarizer = pipeline(
+                "summarization",
+                model=SUMMARIZATION_MODEL_ID,
+                device=model_device,
+                torch_dtype=torch.float16 if device.type in ["mps", "cuda"] else torch.float32,
+                max_length=150,  # Maximum summary length
+                min_length=50,   # Minimum summary length
+                do_sample=False  # Use deterministic generation for consistent results
+            )
+            print(f"✅ DistilBART summarization model loaded on {device}")
+        except Exception as e:
+            print(f"❌ Failed to load DistilBART model: {e}")
+            print("📝 Falling back to simple text truncation for summaries")
+            summarizer = "fallback"
+    return summarizer
+
+def _summarize_chunk(summarizer_model, chunk: str, max_length: int = 100, min_length: int = 30) -> str:
+    """Summarize a single chunk of text"""
+    try:
+        result = summarizer_model(chunk, max_length=max_length, min_length=min_length, do_sample=False)
+        return result[0]['summary_text']
+    except Exception as e:
+        print(f"Chunk summarization failed: {e}")
+        # Extract key sentences from this chunk as fallback
+        sentences = chunk.split('. ')
+        summary = '. '.join(sentences[:2])
+        return summary
+
+def _create_fallback_summary(text: str, num_sentences: int = 3) -> str:
+    """Create a simple extractive summary by taking first N sentences"""
+    sentences = text.split('. ')
+    summary = '. '.join(sentences[:num_sentences])
+    if not summary.endswith('.'):
+        summary += '.'
+    return summary
+
+def _split_text_into_chunks(text: str, max_chunk_length: int = 1024) -> list[str]:
+    """Split text into chunks for processing"""
+    words = text.split()
+    chunks = []
+    for i in range(0, len(words), max_chunk_length):
+        chunk = ' '.join(words[i:i + max_chunk_length])
+        chunks.append(chunk)
+    return chunks
+
+async def generate_summary(text: str, custom_prompt: Optional[str] = None) -> Optional[str]:
+    """Generate a summary of the given text using DistilBART or custom prompt"""
+    try:
+        def _summarize():
+            summarizer_model = load_summarizer()
+            
+            if summarizer_model == "fallback":
+                return f"Summary (fallback): {_create_fallback_summary(text, 5)}"
+            
+            # If custom prompt is provided, use prompt-based summarization
+            if custom_prompt:
+                return _generate_custom_prompt_summary(text, custom_prompt)
+            
+            # Default behavior: use DistilBART for standard summarization
+            max_chunk_length = 1024  # DistilBART's optimal input length
+            words = text.split()
+            
+            # Short text, summarize directly
+            if len(words) <= max_chunk_length:
+                return _summarize_chunk(summarizer_model, text, max_length=150, min_length=50)
+            
+            # Long text, chunk and summarize
+            chunks = _split_text_into_chunks(text, max_chunk_length)
+            summaries = []
+            
+            for i, chunk in enumerate(chunks):
+                print(f"Summarizing chunk {i+1}/{len(chunks)}")
+                chunk_summary = _summarize_chunk(summarizer_model, chunk)
+                summaries.append(chunk_summary)
+            
+            # Combine chunk summaries
+            combined_summary = ' '.join(summaries)
+            
+            # If combined summary is still long, summarize it again
+            if len(combined_summary.split()) > 200:
+                return _summarize_chunk(summarizer_model, combined_summary, max_length=150, min_length=50)
+            
+            return combined_summary
+        
+        summary = await asyncio.to_thread(_summarize)
+        prompt_type = "custom prompt" if custom_prompt else "standard"
+        print(f"✅ Summary generated using {prompt_type} ({len(summary)} characters)")
+        return summary
+        
+    except Exception as e:
+        print(f"❌ Summary generation failed: {e}")
+        return f"Summary (auto): {_create_fallback_summary(text)}"
+
+def _generate_custom_prompt_summary(text: str, custom_prompt: str) -> str:
+    """Generate summary using a custom prompt with intelligent extraction"""
+    try:
+        # For now, use guided extractive summarization with the custom prompt
+        # This avoids loading additional models and works efficiently
+        print(f"Generating custom summary with prompt: {custom_prompt[:50]}...")
+        
+        # Use the guided extractive approach which is fast and effective
+        return _create_guided_extractive_summary(text, custom_prompt)
+            
+    except Exception as e:
+        print(f"Error in custom prompt summarization: {e}")
+        return _create_fallback_summary(text, 3)
+
+def _create_guided_extractive_summary(text: str, prompt: str) -> str:
+    """Create an intelligent extractive summary guided by the prompt"""
+    sentences = [s.strip() for s in text.split('.') if s.strip()]
+    
+    # Extract keywords from the prompt
+    prompt_words = {word.lower().strip('.,!?;:') for word in prompt.split() 
+                   if len(word) > 3 and word.lower() not in {'this', 'that', 'with', 'from', 'they', 'have', 'will', 'been', 'said', 'what', 'when', 'where', 'about', 'please', 'focus', 'summary', 'summarize'}}
+    
+    # Score sentences based on prompt relevance
+    scored_sentences = []
+    for sentence in sentences:
+        sentence_words = {word.lower().strip('.,!?;:') for word in sentence.split()}
+        
+        # Calculate relevance score
+        keyword_matches = len(prompt_words.intersection(sentence_words))
+        sentence_length_score = min(len(sentence.split()) / 20, 1.0)  # Prefer medium-length sentences
+        
+        # Boost score for sentences containing multiple prompt keywords
+        relevance_score = keyword_matches * 2 + sentence_length_score
+        
+        # Extra boost for sentences with specific focus words from prompt
+        focus_words = {'ethical', 'concern', 'issue', 'problem', 'benefit', 'advantage', 'impact', 'effect', 'result', 'consequence'}
+        if any(word in sentence.lower() for word in focus_words if word in prompt.lower()):
+            relevance_score += 1
+        
+        scored_sentences.append((relevance_score, sentence))
+    
+    # Sort by relevance score and take top sentences
+    scored_sentences.sort(key=lambda x: x[0], reverse=True)
+    
+    # Select top 3-5 sentences, ensuring we have enough content
+    selected_sentences = []
+    total_words = 0
+    max_words = 150
+    
+    for score, sentence in scored_sentences:
+        if score > 0 and total_words < max_words:  # Only include relevant sentences
+            selected_sentences.append(sentence)
+            total_words += len(sentence.split())
+            if len(selected_sentences) >= 5:  # Max 5 sentences
+                break
+    
+    # If no relevant sentences found, fall back to first few sentences
+    if not selected_sentences:
+        selected_sentences = sentences[:3]
+    
+    summary = '. '.join(selected_sentences)
+    if not summary.endswith('.'):
+        summary += '.'
+    
+    return f"Summary (guided by: {prompt[:30]}...): {summary}"
+
+@app.post("/api/regenerate-summary/")
+async def regenerate_summary(
+    background_tasks: BackgroundTasks,
+    request: SummaryRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Regenerate summary with custom prompt for existing job"""
+    if not user:
+        raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    # Get the job
+    job = db.query(Job).filter(Job.id == request.job_id, Job.user_id == user.id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if job.status != "completed":
+        raise HTTPException(status_code=400, detail="Job must be completed to regenerate summary")
+    
+    if not job.transcription:
+        raise HTTPException(status_code=400, detail="No transcription available for this job")
+    
+    # Generate new summary in background
+    async def regenerate_summary_background():
+        try:
+            print(f"🔄 Regenerating summary for job {job.id} with custom prompt...")
+            
+            # Generate new summary
+            new_summary = await generate_summary(job.transcription, request.summary_prompt)
+            
+            if new_summary:
+                # Save new summary
+                safe_filename = re.sub(r'[^\w\s-]', '', job.filename).strip()[:50]
+                summary_filename = f"{safe_filename}_{job.id}_summary_custom.txt"
+                summary_path = SUMMARIES_DIR / summary_filename
+                
+                async with aiofiles.open(summary_path, 'w') as f:
+                    await f.write(new_summary)
+                
+                # Generate speech for new summary
+                summary_speech_filename = f"{safe_filename}_{job.id}_summary_custom_speech.mp3"
+                summary_speech_path = SPEECH_DIR / summary_speech_filename
+                speech_success = await text_to_speech(new_summary, str(summary_speech_path))
+                
+                # Update job with new summary
+                job.summary = new_summary
+                job.summary_file = summary_filename
+                job.summary_speech_file = summary_speech_filename if speech_success else None
+                job.summary_prompt = request.summary_prompt
+                db.commit()
+                
+                print(f"✅ Summary regenerated successfully for job {job.id}")
+            else:
+                print(f"❌ Failed to regenerate summary for job {job.id}")
+                
+        except Exception as e:
+            print(f"❌ Error regenerating summary: {e}")
+    
+    # Start regeneration in background
+    background_tasks.add_task(regenerate_summary_background)
+    
+    return {"message": "Summary regeneration started", "job_id": job.id}

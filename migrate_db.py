@@ -32,6 +32,8 @@ def migrate_database():
             columns_to_add.append(('summary_file', 'VARCHAR'))
         if 'summary_speech_file' not in columns:
             columns_to_add.append(('summary_speech_file', 'VARCHAR'))
+        if 'summary_prompt' not in columns:
+            columns_to_add.append(('summary_prompt', 'TEXT'))
         
         # Add missing columns
         for column_name, column_type in columns_to_add:
