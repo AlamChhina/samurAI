@@ -210,19 +210,35 @@
                                 
                                 <div class="flex items-center space-x-2">
                                     {% if job.status == 'completed' %}
-                                        <!-- Compact Actions Dropdown -->
+                                        <!-- Smart Default Action Button -->
                                         <div class="relative">
+                                            {% if job.summary_speech_file %}
+                                            <div class="flex">
+                                                <button onclick="performDefaultAction('{{ job.id }}', '{{ job.summary_speech_file }}', 'Summary')" 
+                                                        id="default-btn-{{ job.id }}"
+                                                        class="bg-indigo-600 text-white px-4 py-2 rounded-l text-sm hover:bg-indigo-700 transition-colors flex items-center">
+                                                    <i class="fas fa-play mr-2"></i><span id="btn-text-{{ job.id }}">Summary</span>
+                                                </button>
+                                                <button onclick="toggleJobActions('{{ job.id }}')" 
+                                                        class="bg-indigo-600 text-white px-2 py-2 rounded-r text-sm hover:bg-indigo-700 transition-colors border-l border-indigo-500">
+                                                    <i class="fas fa-chevron-down"></i>
+                                                </button>
+                                            </div>
+                                            {% else %}
                                             <button onclick="toggleJobActions('{{ job.id }}')" 
+                                                    id="default-btn-{{ job.id }}"
                                                     class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition-colors flex items-center">
-                                                <i class="fas fa-cog mr-2"></i>Actions
+                                                <i class="fas fa-cog mr-2"></i><span id="btn-text-{{ job.id }}">Actions</span>
                                                 <i class="fas fa-chevron-down ml-2"></i>
                                             </button>
+                                            {% endif %}
                                             
                                             <!-- Dropdown Menu -->
                                             <div id="actions-{{ job.id }}" class="hidden absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
                                                 <div class="py-2">
                                                     {% if job.transcript_file %}
                                                     <a href="/download/transcript/{{ job.transcript_file }}" 
+                                                       onclick="setDefaultAction('{{ job.id }}', 'download', '/download/transcript/{{ job.transcript_file }}', 'Transcript', 'fas fa-file-alt', 'bg-green-600')"
                                                        class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                                         <i class="fas fa-file-alt mr-3 text-green-600"></i>Download Transcript
                                                     </a>
@@ -230,28 +246,31 @@
                                                     
                                                     {% if job.summary_file %}
                                                     <a href="/download/summary/{{ job.summary_file }}" 
+                                                       onclick="setDefaultAction('{{ job.id }}', 'download', '/download/summary/{{ job.summary_file }}', 'Summary File', 'fas fa-brain', 'bg-blue-600')"
                                                        class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                                         <i class="fas fa-brain mr-3 text-blue-600"></i>Download Summary
                                                     </a>
                                                     {% endif %}
                                                     
                                                     {% if job.speech_file %}
-                                                    <button onclick="playAudio('{{ job.speech_file }}', '{{ job.id }}', 'Full Transcript'); toggleJobActions('{{ job.id }}')" 
+                                                    <button onclick="setDefaultAction('{{ job.id }}', 'play', '{{ job.speech_file }}', 'Full Audio', 'fas fa-play', 'bg-purple-600'); playAudio('{{ job.speech_file }}', '{{ job.id }}', 'Full Transcript'); toggleJobActions('{{ job.id }}')" 
                                                             class="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left">
                                                         <i class="fas fa-play mr-3 text-purple-600"></i>Play Full Audio
                                                     </button>
                                                     <a href="/download/speech/{{ job.speech_file }}" 
+                                                       onclick="setDefaultAction('{{ job.id }}', 'download', '/download/speech/{{ job.speech_file }}', 'Full Audio', 'fas fa-download', 'bg-purple-500')"
                                                        class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                                         <i class="fas fa-download mr-3 text-purple-500"></i>Download Full Audio
                                                     </a>
                                                     {% endif %}
                                                     
                                                     {% if job.summary_speech_file %}
-                                                    <button onclick="playAudio('{{ job.summary_speech_file }}', '{{ job.id }}', 'Summary'); toggleJobActions('{{ job.id }}')" 
+                                                    <button onclick="setDefaultAction('{{ job.id }}', 'play', '{{ job.summary_speech_file }}', 'Summary', 'fas fa-play', 'bg-indigo-600'); playAudio('{{ job.summary_speech_file }}', '{{ job.id }}', 'Summary'); toggleJobActions('{{ job.id }}')" 
                                                             class="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left">
                                                         <i class="fas fa-play mr-3 text-indigo-600"></i>Play Summary Audio
                                                     </button>
                                                     <a href="/download/summary-speech/{{ job.summary_speech_file }}" 
+                                                       onclick="setDefaultAction('{{ job.id }}', 'download', '/download/summary-speech/{{ job.summary_speech_file }}', 'Summary Audio', 'fas fa-download', 'bg-indigo-500')"
                                                        class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                                         <i class="fas fa-download mr-3 text-indigo-500"></i>Download Summary Audio
                                                     </a>
@@ -727,6 +746,81 @@
         });
 
         // Auto-refresh every 30 seconds for processing jobs
+        // Smart default action system
+        const defaultActions = {}; // Store default actions for each job
+
+        function performDefaultAction(jobId, file, audioType) {
+            const action = defaultActions[jobId];
+            if (action && action.type === 'play') {
+                playAudio(file, jobId, audioType);
+            } else if (action && action.type === 'download') {
+                window.location.href = action.url;
+            } else {
+                // Default fallback - play summary audio
+                playAudio(file, jobId, audioType);
+            }
+        }
+
+        function setDefaultAction(jobId, actionType, actionUrl, displayName, iconClass, bgColorClass) {
+            // Store the new default action
+            defaultActions[jobId] = {
+                type: actionType,
+                url: actionUrl,
+                displayName: displayName,
+                iconClass: iconClass,
+                bgColorClass: bgColorClass
+            };
+
+            // Update the button appearance
+            updateDefaultButton(jobId, actionType, displayName, iconClass, bgColorClass);
+            
+            // Close the dropdown
+            toggleJobActions(jobId);
+        }
+
+        function updateDefaultButton(jobId, actionType, displayName, iconClass, bgColorClass) {
+            const buttonContainer = document.getElementById('default-btn-' + jobId).parentElement;
+            const buttonText = document.getElementById('btn-text-' + jobId);
+            
+            // Update button text
+            buttonText.textContent = displayName;
+            
+            // Get hover color class
+            const hoverColorClass = bgColorClass.replace('bg-', 'hover:bg-').replace('-600', '-700').replace('-500', '-600');
+            
+            // For split button design, update the main button
+            if (buttonContainer.classList.contains('flex')) {
+                const mainButton = buttonContainer.querySelector('button:first-child');
+                const dropdownButton = buttonContainer.querySelector('button:last-child');
+                
+                // Update main button styling
+                mainButton.className = `${bgColorClass} text-white px-4 py-2 rounded-l text-sm ${hoverColorClass} transition-colors flex items-center`;
+                
+                // Update dropdown button to match
+                const borderColorClass = bgColorClass.replace('bg-', 'border-').replace('-600', '-500').replace('-500', '-400');
+                dropdownButton.className = `${bgColorClass} text-white px-2 py-2 rounded-r text-sm ${hoverColorClass} transition-colors border-l ${borderColorClass}`;
+                
+                // Update icon
+                const icon = mainButton.querySelector('i');
+                icon.className = `${iconClass} mr-2`;
+                
+                // Update onclick for the main button based on action type
+                if (actionType === 'play') {
+                    mainButton.setAttribute('onclick', `performDefaultAction('${jobId}', '${defaultActions[jobId].url}', '${displayName}')`);
+                } else {
+                    mainButton.setAttribute('onclick', `window.location.href='${defaultActions[jobId].url}'`);
+                }
+            } else {
+                // Single button design
+                const button = document.getElementById('default-btn-' + jobId);
+                button.className = `${bgColorClass} text-white px-4 py-2 rounded text-sm ${hoverColorClass} transition-colors flex items-center`;
+                
+                // Update icon
+                const icon = button.querySelector('i');
+                icon.className = `${iconClass} mr-2`;
+            }
+        }
+
         // Toggle dropdown menu for job actions
         function toggleJobActions(jobId) {
             const dropdown = document.getElementById(`actions-${jobId}`);
