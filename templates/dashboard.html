@@ -732,6 +732,7 @@
         // Global audio player variables
         let currentAudio = null;
         let currentJobId = null;
+        let currentAudioType = null;
         let updateTimeInterval = null;
 
         // File upload handling
@@ -1009,6 +1010,9 @@
 
         async function refreshJobs() {
             try {
+                // Stop all audio before refreshing
+                stopAllAudio();
+                
                 await axios.get('/api/jobs/', {
                     headers: {
                         'Authorization': `Bearer {{ user.email }}`
@@ -1036,8 +1040,54 @@
             }
         }
 
+        // Function to stop all other audio players
+        function stopAllAudio() {
+            // Stop all inline audio players
+            const allAudioElements = document.querySelectorAll('audio[id^="audio-element-"]');
+            allAudioElements.forEach(audio => {
+                if (!audio.paused) {
+                    audio.pause();
+                }
+            });
+            
+            // Hide all audio players and show summary text
+            const allJobIds = Array.from(allAudioElements).map(audio => {
+                const match = audio.id.match(/audio-element-(.+)/);
+                return match ? match[1] : null;
+            }).filter(Boolean);
+            
+            allJobIds.forEach(jobId => {
+                const contentDiv = document.getElementById(`content-${jobId}`);
+                const audioPlayerDiv = document.getElementById(`audio-player-${jobId}`);
+                const contentHeader = document.getElementById(`content-header-${jobId}`);
+                
+                if (contentDiv && audioPlayerDiv && contentHeader) {
+                    // Restore the original heading
+                    contentHeader.innerHTML = '<i class="fas fa-brain mr-1"></i>AI Summary';
+                    
+                    // Show summary text and hide audio player
+                    audioPlayerDiv.classList.add('hidden');
+                    contentDiv.classList.remove('hidden');
+                }
+            });
+            
+            // Reset current audio tracking
+            currentAudio = null;
+            currentJobId = null;
+            currentAudioType = null;
+        }
+
         // Inline Audio Player Functions
         function playInlineAudio(jobId, speechFile, audioType = 'Audio') {
+            // Stop any currently playing audio first
+            stopAllAudio();
+            // Stop any currently playing audio first
+            stopAllAudio();
+            
+            // Set the new current audio tracking
+            currentJobId = jobId;
+            currentAudioType = audioType;
+            
             const contentDiv = document.getElementById(`content-${jobId}`);
             const audioPlayerDiv = document.getElementById(`audio-player-${jobId}`);
             const audioElement = document.getElementById(`audio-element-${jobId}`);
@@ -1066,6 +1116,9 @@
             }
             
             audioElement.load();
+            
+            // Set the current audio reference for global tracking
+            currentAudio = audioElement;
 
             // Check for saved position
             const savedTime = localStorage.getItem(`audio_position_${jobId}_${audioType.toLowerCase().replace(' ', '_')}`);
@@ -1085,9 +1138,19 @@
 
             // Setup event listeners for this specific audio element
             setupInlineAudioEventListeners(jobId, audioType);
+            
+            // Auto-play the audio after setup
+            audioElement.play().catch(error => {
+                console.log('Auto-play failed, user interaction required:', error);
+            });
         }
 
         function showSummaryText(jobId) {
+            // Only stop the current audio if it's from this job
+            if (currentJobId === jobId && currentAudio && !currentAudio.paused) {
+                currentAudio.pause();
+            }
+            
             const contentDiv = document.getElementById(`content-${jobId}`);
             const audioPlayerDiv = document.getElementById(`audio-player-${jobId}`);
             const audioElement = document.getElementById(`audio-element-${jobId}`);
@@ -1104,6 +1167,13 @@
             // Show summary text and hide audio player
             audioPlayerDiv.classList.add('hidden');
             contentDiv.classList.remove('hidden');
+            
+            // Clear current audio tracking if this was the active job
+            if (currentJobId === jobId) {
+                currentAudio = null;
+                currentJobId = null;
+                currentAudioType = null;
+            }
         }
 
         function setupInlineAudioEventListeners(jobId, audioType) {
@@ -1131,6 +1201,13 @@
             audioElement.addEventListener('ended', () => {
                 const storageKey = `audio_position_${jobId}_${audioType.toLowerCase().replace(' ', '_')}`;
                 localStorage.removeItem(storageKey);
+                
+                // Clear current audio tracking when audio ends naturally
+                if (currentJobId === jobId && currentAudio === audioElement) {
+                    currentAudio = null;
+                    currentJobId = null;
+                    currentAudioType = null;
+                }
             });
         }
 
@@ -1182,25 +1259,36 @@
 
         // Keyboard shortcuts for audio player
         document.addEventListener('keydown', (e) => {
-            if (currentAudio && !document.getElementById('audio-modal').classList.contains('hidden')) {
+            // Only handle shortcuts if we have a currently playing audio
+            if (currentAudio && currentJobId) {
                 switch(e.code) {
                     case 'Space':
                         e.preventDefault();
-                        togglePlayPause();
+                        if (currentAudio.paused) {
+                            currentAudio.play();
+                        } else {
+                            currentAudio.pause();
+                        }
                         break;
                     case 'ArrowLeft':
                         e.preventDefault();
-                        seekAudio(-10);
+                        currentAudio.currentTime = Math.max(0, currentAudio.currentTime - 10);
                         break;
                     case 'ArrowRight':
                         e.preventDefault();
-                        seekAudio(10);
+                        currentAudio.currentTime = Math.min(currentAudio.duration, currentAudio.currentTime + 10);
                         break;
                     case 'Escape':
-                        closeAudioPlayer();
+                        e.preventDefault();
+                        showSummaryText(currentJobId);
                         break;
                 }
             }
+        });
+
+        // Cleanup audio when page is about to unload
+        window.addEventListener('beforeunload', () => {
+            stopAllAudio();
         });
 
         // Auto-refresh every 30 seconds for processing jobs
