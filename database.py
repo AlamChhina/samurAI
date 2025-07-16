@@ -31,6 +31,7 @@ class Job(Base):
     user_id = Column(String, ForeignKey("users.id"))
     filename = Column(String)
     content_hash = Column(String, index=True)  # Hash of the content for duplicate detection
+    media_hash = Column(String, index=True)  # Hash of the media content only (excluding summary prompt)
     status = Column(String, default="pending")  # pending, processing, completed, failed
     transcription = Column(Text)
     transcript_file = Column(String)

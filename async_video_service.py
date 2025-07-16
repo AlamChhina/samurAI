@@ -28,6 +28,7 @@ import yt_dlp
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
+import markdown
 
 # MLX imports for Apple Silicon optimization
 try:
@@ -78,6 +79,15 @@ app = FastAPI(title="Video Audio Text Service", version="2.0.0")
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+# Add markdown filter to Jinja2 environment
+def markdown_filter(text):
+    """Convert markdown text to HTML"""
+    if not text:
+        return ""
+    return markdown.markdown(text, extensions=['nl2br', 'fenced_code'])
+
+templates.env.filters['markdown'] = markdown_filter
 
 # Configuration
 MODEL_ID = "openai/whisper-base"
@@ -262,6 +272,18 @@ def check_existing_processed_content(db: Session, content_hash: str) -> Optional
         Job.content_hash == content_hash,
         Job.status == "completed"
     ).first()
+
+def check_existing_transcript_by_media(db: Session, media_hash: str) -> Optional[Job]:
+    """Check if transcript already exists for this media content (ignoring summary prompt)"""
+    return db.query(Job).filter(
+        Job.media_hash == media_hash,
+        Job.status == "completed",
+        Job.transcription.isnot(None)
+    ).first()
+
+def generate_media_hash(content: str) -> str:
+    """Generate a hash for media content only (excluding summary prompt)"""
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()
 
 def create_job_from_existing_content(db: Session, user_id: str, existing_job: Job, filename: str, summary_prompt: Optional[str] = None) -> Job:
     """Create a new job for a user by copying data from an existing completed job"""
@@ -634,11 +656,107 @@ async def text_to_speech(text: str, output_path: str) -> bool:
     print("❌ All TTS engines failed")
     return False
 
-async def process_video_background(job_id: str, video_path: str, filename: str, db: Session, custom_prompt: Optional[str] = None):
-    """Background task to process video"""
-    job = db.query(Job).filter(Job.id == job_id).first()
+async def process_with_existing_transcript(job_id: str, existing_job_id: str, summary_prompt: Optional[str] = None):
+    """Background task to process job using existing transcript with new summary prompt"""
+    from database import SessionLocal
+    
+    # Create a fresh database session for this background task
+    db = SessionLocal()
     
     try:
+        # Get both jobs with fresh database session
+        job = db.query(Job).filter(Job.id == job_id).first()
+        existing_job = db.query(Job).filter(Job.id == existing_job_id).first()
+        
+        if not job or not existing_job:
+            raise RuntimeError("Job or existing job not found")
+        
+        # Update status to processing
+        job.status = "processing"
+        db.commit()
+        
+        # Copy transcript from existing job
+        transcription = existing_job.transcription
+        
+        # Save transcription for this job
+        safe_title = re.sub(r'[^\w\s-]', '', job.filename).strip()[:50]
+        transcript_filename = f"{safe_title}_{job_id}_transcript.txt"
+        transcript_path = TRANSCRIPTS_DIR / transcript_filename
+        
+        async with aiofiles.open(transcript_path, 'w') as f:
+            await f.write(transcription)
+        
+        # Generate speech for full transcript
+        print("🎵 Generating speech for transcript...")
+        speech_filename = f"{safe_title}_{job_id}_speech.mp3"
+        speech_path = SPEECH_DIR / speech_filename
+        success = await text_to_speech(transcription, str(speech_path))
+        
+        if not success:
+            raise RuntimeError("Failed to generate speech")
+        
+        # Generate summary using MLX with new prompt
+        print("🧠 Generating summary using MLX...")
+        summary = await generate_summary(transcription, summary_prompt)
+        
+        summary_filename = None
+        summary_speech_filename = None
+        
+        if summary:
+            # Save summary
+            summary_filename = f"{safe_title}_{job_id}_summary.txt"
+            summary_path = SUMMARIES_DIR / summary_filename
+            
+            async with aiofiles.open(summary_path, 'w') as f:
+                await f.write(summary)
+            
+            # Generate speech for summary
+            print("🎵 Generating speech for summary...")
+            summary_speech_filename = f"{safe_title}_{job_id}_summary_speech.mp3"
+            summary_speech_path = SPEECH_DIR / summary_speech_filename
+            summary_speech_success = await text_to_speech(summary, str(summary_speech_path))
+            
+            if not summary_speech_success:
+                print("⚠️ Failed to generate summary speech, but continuing...")
+                summary_speech_filename = None
+        
+        # Update job with results
+        job.status = "completed"
+        job.transcription = transcription
+        job.transcript_file = transcript_filename
+        job.speech_file = speech_filename
+        job.summary = summary
+        job.summary_file = summary_filename
+        job.summary_speech_file = summary_speech_filename
+        job.summary_prompt = summary_prompt
+        job.completed_at = datetime.now(timezone.utc)
+        db.commit()
+        
+        print(f"🎉 Job {job_id} completed successfully using existing transcript!")
+        
+    except Exception as e:
+        print(f"❌ Job {job_id} failed: {e}")
+        # Get job again in case it was detached
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if job:
+            job.status = "failed"
+            job.error_message = str(e)
+            db.commit()
+    finally:
+        db.close()
+
+async def process_video_background(job_id: str, video_path: str, filename: str, custom_prompt: Optional[str] = None):
+    """Background task to process video"""
+    from database import SessionLocal
+    
+    # Create a fresh database session for this background task
+    db = SessionLocal()
+    
+    try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            raise RuntimeError("Job not found")
+        
         # Update status to processing
         job.status = "processing"
         db.commit()
@@ -719,12 +837,21 @@ async def process_video_background(job_id: str, video_path: str, filename: str, 
         # Clean up video file
         if os.path.exists(video_path):
             os.remove(video_path)
+        # Close database session
+        db.close()
 
-async def process_audio_background(job_id: str, audio_path: str, filename: str, db: Session, summary_prompt: Optional[str] = None):
+async def process_audio_background(job_id: str, audio_path: str, filename: str, summary_prompt: Optional[str] = None):
     """Background task to process audio"""
-    job = db.query(Job).filter(Job.id == job_id).first()
+    from database import SessionLocal
+    
+    # Create a fresh database session for this background task
+    db = SessionLocal()
     
     try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            raise RuntimeError("Job not found")
+        
         # Update status to processing
         job.status = "processing"
         db.commit()
@@ -809,14 +936,24 @@ async def process_audio_background(job_id: str, audio_path: str, filename: str, 
         # Clean up original audio file
         if os.path.exists(audio_path):
             os.remove(audio_path)
+        # Close database session
+        db.close()
 
-async def process_youtube_background(job_id: str, youtube_url: str, db: Session, custom_prompt: Optional[str] = None):
+async def process_youtube_background(job_id: str, youtube_url: str, custom_prompt: Optional[str] = None):
     """Background task to process YouTube video"""
-    job = db.query(Job).filter(Job.id == job_id).first()
-    video_path = None
-    audio_path = None
+    from database import SessionLocal
+    
+    # Create a fresh database session for this background task
+    db = SessionLocal()
     
     try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            raise RuntimeError("Job not found")
+        
+        video_path = None
+        audio_path = None
+
         # Update status to processing
         job.status = "processing"
         db.commit()
@@ -933,6 +1070,8 @@ async def process_youtube_background(job_id: str, youtube_url: str, db: Session,
             os.remove(video_path)
         if audio_path and os.path.exists(audio_path):
             os.remove(audio_path)
+        # Close database session
+        db.close()
 
 def extract_youtube_video_id(url_or_id: str) -> Optional[str]:
     """Extract YouTube video ID from URL or return the ID if it's already a video ID"""
@@ -1139,10 +1278,14 @@ async def process_video(
     
     # Generate content hash for duplicate detection
     file_hash = await generate_file_hash_async(temp_video_path)
+    
+    # Create two hashes: one for media content, one for complete job (including prompt)
+    media_identifier = f"video:{file_hash}"
+    media_hash = generate_media_hash(media_identifier)
     content_identifier = f"video:{file_hash}:{summary_prompt or 'default'}"
     content_hash = generate_content_hash(content_identifier)
     
-    # Check for existing job by this user first
+    # Check for existing job by this user with same prompt first
     existing_user_job = check_duplicate_job(db, user.id, content_hash)
     if existing_user_job:
         # Clean up temporary file
@@ -1151,11 +1294,41 @@ async def process_video(
         return {
             "job_id": existing_user_job.id, 
             "status": existing_user_job.status, 
-            "message": f"This video has already been processed (Job ID: {existing_user_job.id})",
+            "message": f"This video with the same prompt has already been processed (Job ID: {existing_user_job.id})",
             "duplicate": True
         }
     
-    # Check if ANY user has processed this content successfully
+    # Check if transcript already exists for this media (any user, any prompt)
+    existing_transcript_job = check_existing_transcript_by_media(db, media_hash)
+    if existing_transcript_job:
+        # Clean up temporary file
+        if os.path.exists(temp_video_path):
+            os.remove(temp_video_path)
+        
+        # Create job for this user
+        job = Job(
+            user_id=user.id,
+            filename=file.filename,
+            content_hash=content_hash,
+            media_hash=media_hash,
+            status="pending",
+            summary_prompt=summary_prompt
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        
+        # Start background processing using existing transcript
+        background_tasks.add_task(process_with_existing_transcript, job.id, existing_transcript_job.id, summary_prompt)
+        
+        return {
+            "job_id": job.id, 
+            "status": "pending", 
+            "message": "Video transcript already exists. Generating new summary with your prompt...",
+            "reused_transcript": True
+        }
+    
+    # Check if ANY user has processed this content successfully with same prompt
     existing_processed_job = check_existing_processed_content(db, content_hash)
     if existing_processed_job:
         # Clean up temporary file
@@ -1169,7 +1342,7 @@ async def process_video(
         return {
             "job_id": new_job.id, 
             "status": "completed", 
-            "message": f"Video was already processed. Created instant copy for you (Job ID: {new_job.id})",
+            "message": f"Video was already processed with same prompt. Created instant copy for you (Job ID: {new_job.id})",
             "reused": True
         }
     
@@ -1178,6 +1351,7 @@ async def process_video(
         user_id=user.id,
         filename=file.filename,
         content_hash=content_hash,
+        media_hash=media_hash,
         status="pending",
         summary_prompt=summary_prompt
     )
@@ -1190,7 +1364,7 @@ async def process_video(
     os.rename(temp_video_path, video_path)
     
     # Start background processing
-    background_tasks.add_task(process_video_background, job.id, video_path, file.filename, db, summary_prompt)
+    background_tasks.add_task(process_video_background, job.id, video_path, file.filename, summary_prompt)
     
     return {"job_id": job.id, "status": "pending", "message": "Video processing started"}
 
@@ -1221,10 +1395,14 @@ async def process_audio(
     
     # Generate content hash for duplicate detection
     file_hash = await generate_file_hash_async(temp_audio_path)
+    
+    # Create two hashes: one for media content, one for complete job (including prompt)
+    media_identifier = f"audio:{file_hash}"
+    media_hash = generate_media_hash(media_identifier)
     content_identifier = f"audio:{file_hash}:{summary_prompt or 'default'}"
     content_hash = generate_content_hash(content_identifier)
     
-    # Check for existing job by this user first
+    # Check for existing job by this user with same prompt first
     existing_user_job = check_duplicate_job(db, user.id, content_hash)
     if existing_user_job:
         # Clean up temporary file
@@ -1233,11 +1411,42 @@ async def process_audio(
         return {
             "job_id": existing_user_job.id, 
             "status": existing_user_job.status, 
-            "message": f"This audio file has already been processed (Job ID: {existing_user_job.id})",
+            "message": f"This audio file with the same prompt has already been processed (Job ID: {existing_user_job.id})",
             "duplicate": True
         }
     
-    # Check if ANY user has processed this content successfully
+    # Check if transcript already exists for this media (any user, any prompt)
+    existing_transcript_job = check_existing_transcript_by_media(db, media_hash)
+    if existing_transcript_job:
+        # Clean up temporary file
+        if os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path)
+        
+        # Create job for this user
+        job = Job(
+            user_id=user.id,
+            filename=file.filename,
+            content_hash=content_hash,
+            media_hash=media_hash,
+            status="pending",
+            summary_prompt=summary_prompt,
+            created_at=datetime.now(timezone.utc)
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        
+        # Start background processing using existing transcript
+        background_tasks.add_task(process_with_existing_transcript, job.id, existing_transcript_job.id, summary_prompt)
+        
+        return {
+            "job_id": job.id, 
+            "status": "pending", 
+            "message": "Audio transcript already exists. Generating new summary with your prompt...",
+            "reused_transcript": True
+        }
+    
+    # Check if ANY user has processed this content successfully with same prompt
     existing_processed_job = check_existing_processed_content(db, content_hash)
     if existing_processed_job:
         # Clean up temporary file
@@ -1251,7 +1460,7 @@ async def process_audio(
         return {
             "job_id": new_job.id, 
             "status": "completed", 
-            "message": f"Audio file was already processed. Created instant copy for you (Job ID: {new_job.id})",
+            "message": f"Audio file was already processed with same prompt. Created instant copy for you (Job ID: {new_job.id})",
             "reused": True
         }
     
@@ -1260,6 +1469,7 @@ async def process_audio(
         user_id=user.id,
         filename=file.filename,
         content_hash=content_hash,
+        media_hash=media_hash,
         status="pending",
         summary_prompt=summary_prompt,
         created_at=datetime.now(timezone.utc)
@@ -1273,7 +1483,7 @@ async def process_audio(
     os.rename(temp_audio_path, audio_path)
     
     # Start background processing
-    background_tasks.add_task(process_audio_background, job.id, audio_path, file.filename, db, summary_prompt)
+    background_tasks.add_task(process_audio_background, job.id, audio_path, file.filename, summary_prompt)
     
     return {"job_id": job.id, "status": "pending", "message": "Audio processing started"}
 
@@ -1296,20 +1506,51 @@ async def process_youtube(
     normalized_url = normalize_youtube_input(request.url)
     
     # Generate content hash for duplicate detection
-    content_identifier = f"youtube:{extract_youtube_video_id(normalized_url)}:{request.summary_prompt or 'default'}"
+    video_id = extract_youtube_video_id(normalized_url)
+    
+    # Create two hashes: one for media content, one for complete job (including prompt)
+    media_identifier = f"youtube:{video_id}"
+    media_hash = generate_media_hash(media_identifier)
+    content_identifier = f"youtube:{video_id}:{request.summary_prompt or 'default'}"
     content_hash = generate_content_hash(content_identifier)
     
-    # Check for existing job by this user first
+    # Check for existing job by this user with same prompt first
     existing_user_job = check_duplicate_job(db, user.id, content_hash)
     if existing_user_job:
         return {
             "job_id": existing_user_job.id, 
             "status": existing_user_job.status, 
-            "message": f"This YouTube video has already been processed (Job ID: {existing_user_job.id})",
+            "message": f"This YouTube video with the same prompt has already been processed (Job ID: {existing_user_job.id})",
             "duplicate": True
         }
     
-    # Check if ANY user has processed this content successfully
+    # Check if transcript already exists for this media (any user, any prompt)
+    existing_transcript_job = check_existing_transcript_by_media(db, media_hash)
+    if existing_transcript_job:
+        # Create job for this user
+        job = Job(
+            user_id=user.id,
+            filename=f"YouTube: {normalized_url}",
+            content_hash=content_hash,
+            media_hash=media_hash,
+            status="pending",
+            summary_prompt=request.summary_prompt
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        
+        # Start background processing using existing transcript
+        background_tasks.add_task(process_with_existing_transcript, job.id, existing_transcript_job.id, request.summary_prompt)
+        
+        return {
+            "job_id": job.id, 
+            "status": "pending", 
+            "message": "YouTube transcript already exists. Generating new summary with your prompt...",
+            "reused_transcript": True
+        }
+    
+    # Check if ANY user has processed this content successfully with same prompt
     existing_processed_job = check_existing_processed_content(db, content_hash)
     if existing_processed_job:
         # Create a new job for this user by copying the existing content
@@ -1320,7 +1561,7 @@ async def process_youtube(
         return {
             "job_id": new_job.id, 
             "status": "completed", 
-            "message": f"YouTube video was already processed. Created instant copy for you (Job ID: {new_job.id})",
+            "message": f"YouTube video was already processed with same prompt. Created instant copy for you (Job ID: {new_job.id})",
             "reused": True
         }
     
@@ -1329,6 +1570,7 @@ async def process_youtube(
         user_id=user.id,
         filename=f"YouTube: {normalized_url}",
         content_hash=content_hash,
+        media_hash=media_hash,
         status="pending",
         summary_prompt=request.summary_prompt
     )
@@ -1337,7 +1579,7 @@ async def process_youtube(
     db.refresh(job)
     
     # Start background processing for YouTube
-    background_tasks.add_task(process_youtube_background, job.id, normalized_url, db, request.summary_prompt)
+    background_tasks.add_task(process_youtube_background, job.id, normalized_url, request.summary_prompt)
     
     return {"job_id": job.id, "status": "pending", "message": "YouTube video processing started"}
 
