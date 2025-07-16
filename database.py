@@ -21,8 +21,23 @@ class User(Base):
     picture = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    # Relationship
+    # Relationships
     jobs = relationship("Job", back_populates="user")
+    preferences = relationship("UserPreferences", back_populates="user", uselist=False)
+
+class UserPreferences(Base):
+    __tablename__ = "user_preferences"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id"), unique=True)
+    preferred_voice = Column(String, default="en-US-AriaNeural")  # Edge-TTS voice
+    voice_speed = Column(String, default="1.0")  # Speech speed multiplier
+    voice_pitch = Column(String, default="0Hz")  # Voice pitch adjustment
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationship
+    user = relationship("User", back_populates="preferences")
 
 class Job(Base):
     __tablename__ = "jobs"

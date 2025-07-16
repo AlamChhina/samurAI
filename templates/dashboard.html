@@ -195,6 +195,9 @@
                         <img src="{{ user.picture }}" alt="Profile" class="w-8 h-8 rounded-full">
                     {% endif %}
                     <span class="text-gray-700">{{ user.name }}</span>
+                    <a href="/profile" class="text-purple-600 hover:text-purple-800">
+                        <i class="fas fa-user-cog mr-1"></i>Profile
+                    </a>
                     <a href="/" class="text-blue-600 hover:text-blue-800">
                         <i class="fas fa-home mr-1"></i>Home
                     </a>
@@ -1334,21 +1337,126 @@
                 const response = await axios.post('/api/regenerate-summary/', {
                     job_id: jobId,
                     summary_prompt: newPrompt
+                }, {
+                    headers: {
+                        'Authorization': `Bearer {{ user.email }}`
+                    }
                 });
                 
                 if (response.data.success) {
                     closeEditPromptModal();
-                    refreshJobs(); // Refresh to show the new summary
+                    
+                    // Instead of full page reload, update the specific job card
+                    await updateJobCard(jobId);
+                    
                     showSuccessToast('Summary regenerated successfully!', 'Summary Updated');
                 } else {
                     showErrorToast('Error: ' + response.data.message, 'Update Failed');
                 }
             } catch (error) {
-                showErrorToast('Error regenerating summary: ' + error.response?.data?.detail || error.message, 'Update Failed');
+                showErrorToast('Error regenerating summary: ' + (error.response?.data?.detail || error.message), 'Update Failed');
             } finally {
                 // Restore button state
                 saveButton.innerHTML = originalText;
                 saveButton.disabled = false;
+            }
+        }
+
+        // Update a specific job card with fresh data
+        async function updateJobCard(jobId) {
+            try {
+                // Fetch updated job data
+                const response = await axios.get(`/api/jobs/${jobId}`, {
+                    headers: {
+                        'Authorization': `Bearer {{ user.email }}`
+                    }
+                });
+                
+                const job = response.data;
+                console.log(`🔄 Updating job card ${jobId} with new summary:`, job.summary?.substring(0, 100) + '...');
+                
+                // Find the summary content area
+                const contentDiv = document.getElementById(`content-${jobId}`);
+                if (!contentDiv) {
+                    console.error(`Content div not found for job ${jobId}`);
+                    return;
+                }
+                
+                const summaryContentDiv = contentDiv.querySelector('.markdown-content');
+                if (summaryContentDiv && job.summary) {
+                    // Parse markdown-like formatting for basic display
+                    const formattedSummary = job.summary
+                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                        .replace(/\n\n/g, '</p><p>')
+                        .replace(/\n/g, '<br>');
+                    
+                    summaryContentDiv.innerHTML = `<p>${formattedSummary}</p>`;
+                    console.log(`✅ Summary content updated for job ${jobId}`);
+                }
+                
+                // Update the custom prompt display (find the purple prompt box)
+                const summarySection = contentDiv.closest('.bg-blue-50');
+                if (summarySection) {
+                    let customPromptDiv = summarySection.querySelector('.bg-purple-50');
+                    
+                    if (job.summary_prompt) {
+                        // If there's a custom prompt, ensure the prompt box exists and is visible
+                        if (!customPromptDiv) {
+                            // Create the prompt box if it doesn't exist
+                            const promptHTML = `
+                                <div class="mb-2 p-2 bg-purple-50 rounded border border-purple-200">
+                                    <p class="text-xs text-purple-700 font-medium mb-1">
+                                        <i class="fas fa-quote-left mr-1"></i>Custom Prompt Used:
+                                    </p>
+                                    <p class="text-xs text-purple-600 italic">"${job.summary_prompt}"</p>
+                                </div>
+                            `;
+                            summaryContentDiv.insertAdjacentHTML('beforebegin', promptHTML);
+                        } else {
+                            // Update existing prompt box
+                            const promptText = customPromptDiv.querySelector('.text-purple-600.italic');
+                            if (promptText) {
+                                promptText.textContent = `"${job.summary_prompt}"`;
+                            }
+                            customPromptDiv.style.display = 'block';
+                        }
+                        
+                        // Update the header to show custom prompt indicator
+                        const headerSpan = summarySection.querySelector('.text-purple-600 span');
+                        if (!headerSpan) {
+                            const header = summarySection.querySelector('h4');
+                            if (header) {
+                                header.innerHTML += '<span class="text-xs font-normal text-purple-600 ml-2"><i class="fas fa-magic mr-1"></i>Custom Prompt</span>';
+                            }
+                        }
+                    } else {
+                        // No custom prompt, hide the prompt box
+                        if (customPromptDiv) {
+                            customPromptDiv.style.display = 'none';
+                        }
+                        
+                        // Remove custom prompt indicator from header
+                        const headerSpan = summarySection.querySelector('.text-purple-600 span');
+                        if (headerSpan) {
+                            headerSpan.remove();
+                        }
+                    }
+                }
+                
+                // Update the edit button's data attribute
+                const editButton = document.querySelector(`button[data-job-id="${jobId}"]`);
+                if (editButton) {
+                    editButton.setAttribute('data-current-prompt', job.summary_prompt || '');
+                }
+                
+                console.log(`✅ Job card ${jobId} updated successfully`);
+                
+            } catch (error) {
+                console.error(`❌ Failed to update job card ${jobId}:`, error);
+                // Fallback to full page refresh if update fails
+                showWarningToast('Content updated, refreshing page...', 'Refreshing');
+                setTimeout(() => refreshJobs(), 1000);
             }
         }
 

@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile - Video Audio Text Service</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    
+    <!-- Toast notification styles -->
+    <style>
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            max-width: 400px;
+        }
+        
+        .toast {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            margin-bottom: 10px;
+            padding: 16px;
+            border-left: 4px solid;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .toast.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+        
+        .toast.success {
+            border-left-color: #10b981;
+        }
+        
+        .toast.error {
+            border-left-color: #ef4444;
+        }
+        
+        .toast.info {
+            border-left-color: #3b82f6;
+        }
+        
+        .toast.warning {
+            border-left-color: #f59e0b;
+        }
+        
+        .toast-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 12px;
+            font-size: 12px;
+        }
+        
+        .toast.success .toast-icon {
+            background-color: #d1fae5;
+            color: #059669;
+        }
+        
+        .toast.error .toast-icon {
+            background-color: #fee2e2;
+            color: #dc2626;
+        }
+        
+        .toast.info .toast-icon {
+            background-color: #dbeafe;
+            color: #2563eb;
+        }
+        
+        .toast.warning .toast-icon {
+            background-color: #fef3c7;
+            color: #d97706;
+        }
+        
+        .toast-content {
+            display: flex;
+            align-items: flex-start;
+        }
+        
+        .toast-message {
+            flex: 1;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        
+        .toast-title {
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 4px;
+        }
+        
+        .toast-description {
+            color: #6b7280;
+        }
+        
+        .toast-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: none;
+            border: none;
+            color: #9ca3af;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px;
+        }
+        
+        .toast-close:hover {
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+    
+    <nav class="bg-white shadow-sm border-b">
+        <div class="container mx-auto px-4 py-4">
+            <div class="flex justify-between items-center">
+                <div class="flex items-center space-x-3">
+                    <i class="fas fa-video text-2xl text-blue-600"></i>
+                    <h1 class="text-xl font-bold text-gray-800">Video Audio Text Service</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    {% if user.picture %}
+                        <img src="{{ user.picture }}" alt="Profile" class="w-8 h-8 rounded-full">
+                    {% endif %}
+                    <span class="text-gray-700">{{ user.name }}</span>
+                    <a href="/dashboard" class="text-blue-600 hover:text-blue-800">
+                        <i class="fas fa-home mr-1"></i>Dashboard
+                    </a>
+                    <a href="/" class="text-gray-600 hover:text-gray-800">
+                        <i class="fas fa-arrow-left mr-1"></i>Home
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto px-4 py-8">
+        <!-- Profile Header -->
+        <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
+            <div class="flex items-center space-x-6">
+                {% if user.picture %}
+                    <img src="{{ user.picture }}" alt="Profile Picture" class="w-20 h-20 rounded-full border-4 border-blue-100">
+                {% else %}
+                    <div class="w-20 h-20 rounded-full bg-blue-600 flex items-center justify-center text-white text-2xl font-bold">
+                        {{ user.name[0].upper() if user.name else 'U' }}
+                    </div>
+                {% endif %}
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-800">{{ user.name }}</h1>
+                    <p class="text-gray-600">{{ user.email }}</p>
+                    <p class="text-sm text-gray-500">
+                        <i class="fas fa-calendar mr-1"></i>
+                        Member since {{ user.created_at.strftime('%B %Y') }}
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Voice Preferences Section -->
+        <div class="bg-white rounded-lg shadow-sm">
+            <div class="p-6 border-b border-gray-200">
+                <h2 class="text-2xl font-semibold text-gray-800">
+                    <i class="fas fa-volume-up text-purple-600 mr-2"></i>Voice Preferences
+                </h2>
+                <p class="text-gray-600 mt-1">Customize your text-to-speech output settings</p>
+            </div>
+            
+            <div class="p-6">
+                <form id="preferences-form" class="space-y-6">
+                    <!-- Voice Selection -->
+                    <div>
+                        <label for="preferred-voice" class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-microphone mr-1 text-blue-600"></i>Preferred Voice
+                        </label>
+                        <select id="preferred-voice" name="preferred_voice" class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                            <option value="">Loading voices...</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">
+                            <i class="fas fa-info-circle mr-1"></i>Microsoft Edge Neural voices provide natural, high-quality speech
+                        </p>
+                    </div>
+
+                    <!-- Voice Speed -->
+                    <div>
+                        <label for="voice-speed" class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-tachometer-alt mr-1 text-green-600"></i>Speech Speed
+                        </label>
+                        <div class="flex items-center space-x-4">
+                            <input type="range" id="voice-speed" name="voice_speed" 
+                                   min="0.5" max="2.0" step="0.1" value="{{ preferences.voice_speed if preferences else '1.0' }}"
+                                   class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                            <span id="speed-display" class="text-sm font-medium text-gray-700 w-12">1.0x</span>
+                        </div>
+                        <div class="flex justify-between text-xs text-gray-500 mt-1">
+                            <span>0.5x (Slow)</span>
+                            <span>1.0x (Normal)</span>
+                            <span>2.0x (Fast)</span>
+                        </div>
+                    </div>
+
+                    <!-- Voice Pitch -->
+                    <div>
+                        <label for="voice-pitch" class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-music mr-1 text-orange-600"></i>Voice Pitch
+                        </label>
+                        <div class="flex items-center space-x-4">
+                            <input type="range" id="voice-pitch" name="voice_pitch" 
+                                   min="-50" max="50" step="5" value="{{ preferences.voice_pitch.replace('Hz', '') if preferences and preferences.voice_pitch else '0' }}"
+                                   class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                            <span id="pitch-display" class="text-sm font-medium text-gray-700 w-16">0Hz</span>
+                        </div>
+                        <div class="flex justify-between text-xs text-gray-500 mt-1">
+                            <span>-50Hz (Lower)</span>
+                            <span>0Hz (Normal)</span>
+                            <span>+50Hz (Higher)</span>
+                        </div>
+                    </div>
+
+                    <!-- Test Voice Button -->
+                    <div class="border-t border-gray-200 pt-6">
+                        <div class="mb-4">
+                            <div>
+                                <h3 class="text-lg font-medium text-gray-800">Voice Preview</h3>
+                                <p class="text-sm text-gray-600">Audio will update automatically when you change settings</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Loading State -->
+                        <div id="voice-loading" class="hidden mb-4">
+                            <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                <div class="flex items-center">
+                                    <i class="fas fa-spinner fa-spin text-blue-600 mr-3"></i>
+                                    <div>
+                                        <h4 class="font-medium text-blue-800">Generating Voice Preview</h4>
+                                        <p class="text-sm text-blue-600">Please wait while we generate your audio sample...</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Inline Audio Player (always visible when loaded) -->
+                        <div id="voice-test-player">
+                            <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h4 class="font-medium text-blue-800">
+                                        <i class="fas fa-volume-up mr-2"></i>Voice Test Sample
+                                    </h4>
+                                    <button onclick="hideVoiceTestPlayer()" class="text-blue-600 hover:text-blue-800 text-sm">
+                                        <i class="fas fa-times mr-1"></i>Close Player
+                                    </button>
+                                </div>
+                                
+                                <audio id="voice-test-audio" controls class="w-full mb-3" controlsList="nodownload">
+                                    <source id="voice-test-source" src="" type="audio/mpeg">
+                                    Your browser does not support the audio element.
+                                </audio>
+                                
+                                <!-- Progress Info -->
+                                <div class="text-xs text-blue-700 mb-3">
+                                    <div class="flex justify-between">
+                                        <span id="test-current-time">00:00</span>
+                                        <span id="test-duration">00:00</span>
+                                    </div>
+                                    <div class="mt-1">
+                                        <span id="test-resume-info"></span>
+                                    </div>
+                                </div>
+                                
+                                <!-- Speed Control -->
+                                <div class="flex items-center justify-center space-x-2">
+                                    <label for="test-speed-control" class="text-xs text-blue-700">Speed:</label>
+                                    <select id="test-speed-control" onchange="changeTestSpeed()" class="border border-blue-300 rounded px-2 py-1 text-xs">
+                                        <option value="0.5">0.5x</option>
+                                        <option value="0.75">0.75x</option>
+                                        <option value="1" selected>1x</option>
+                                        <option value="1.25">1.25x</option>
+                                        <option value="1.5">1.5x</option>
+                                        <option value="2">2x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Save Button -->
+                    <div class="border-t border-gray-200 pt-6">
+                        <div class="flex justify-end space-x-4">
+                            <button type="button" onclick="resetToDefaults()" 
+                                    class="bg-gray-600 text-white px-6 py-3 rounded-lg hover:bg-gray-700 transition-colors">
+                                <i class="fas fa-undo mr-2"></i>Reset to Defaults
+                            </button>
+                            <button type="submit" id="save-preferences-btn"
+                                    class="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors flex items-center">
+                                <i class="fas fa-save mr-2"></i>Save Preferences
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Usage Statistics -->
+        <div class="bg-white rounded-lg shadow-sm mt-8">
+            <div class="p-6 border-b border-gray-200">
+                <h2 class="text-2xl font-semibold text-gray-800">
+                    <i class="fas fa-chart-bar text-green-600 mr-2"></i>Usage Statistics
+                </h2>
+            </div>
+            
+            <div class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="text-center p-4 bg-blue-50 rounded-lg">
+                        <div class="text-3xl font-bold text-blue-600">{{ job_stats.total_jobs or 0 }}</div>
+                        <div class="text-sm text-gray-600">Total Jobs</div>
+                    </div>
+                    <div class="text-center p-4 bg-green-50 rounded-lg">
+                        <div class="text-3xl font-bold text-green-600">{{ job_stats.completed_jobs or 0 }}</div>
+                        <div class="text-sm text-gray-600">Completed Jobs</div>
+                    </div>
+                    <div class="text-center p-4 bg-purple-50 rounded-lg">
+                        <div class="text-3xl font-bold text-purple-600">{{ job_stats.total_hours or '0.0' }}</div>
+                        <div class="text-sm text-gray-600">Hours Processed</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Toast notification system (reused from dashboard)
+        function showToast(message, type = 'info', title = null, duration = 5000) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            const icons = {
+                success: 'fas fa-check',
+                error: 'fas fa-times',
+                warning: 'fas fa-exclamation',
+                info: 'fas fa-info'
+            };
+            
+            const titles = {
+                success: title || 'Success',
+                error: title || 'Error',
+                warning: title || 'Warning',
+                info: title || 'Information'
+            };
+            
+            toast.innerHTML = `
+                <div class="toast-content">
+                    <div class="toast-icon">
+                        <i class="${icons[type]}"></i>
+                    </div>
+                    <div class="toast-message">
+                        <div class="toast-title">${titles[type]}</div>
+                        <div class="toast-description">${message}</div>
+                    </div>
+                </div>
+                <button class="toast-close" onclick="hideToast(this.parentElement)">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.add('show');
+            }, 10);
+            
+            setTimeout(() => {
+                hideToast(toast);
+            }, duration);
+            
+            return toast;
+        }
+        
+        function hideToast(toast) {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                if (toast.parentElement) {
+                    toast.parentElement.removeChild(toast);
+                }
+            }, 300);
+        }
+        
+        function showSuccessToast(message, title = null) {
+            return showToast(message, 'success', title);
+        }
+        
+        function showErrorToast(message, title = null) {
+            return showToast(message, 'error', title);
+        }
+        
+        function showWarningToast(message, title = null) {
+            return showToast(message, 'warning', title);
+        }
+        
+        function showInfoToast(message, title = null) {
+            return showToast(message, 'info', title);
+        }
+
+        // Voice preferences functionality
+        const voiceOptions = [
+            // Popular Female Voices
+            { value: 'en-US-AriaNeural', label: '🇺🇸 Aria (Female, US) - Friendly & Clear', category: 'Popular' },
+            { value: 'en-US-JennyNeural', label: '🇺🇸 Jenny (Female, US) - Professional', category: 'Popular' },
+            { value: 'en-US-AvaNeural', label: '🇺🇸 Ava (Female, US) - Natural', category: 'Popular' },
+            { value: 'en-US-EmmaNeural', label: '🇺🇸 Emma (Female, US) - Warm', category: 'Popular' },
+            { value: 'en-US-MichelleNeural', label: '🇺🇸 Michelle (Female, US) - Business', category: 'Popular' },
+            
+            // Popular Male Voices  
+            { value: 'en-US-BrianNeural', label: '🇺🇸 Brian (Male, US) - Professional', category: 'Popular' },
+            { value: 'en-US-AndrewNeural', label: '🇺🇸 Andrew (Male, US) - Casual', category: 'Popular' },
+            { value: 'en-US-ChristopherNeural', label: '🇺🇸 Christopher (Male, US) - Confident', category: 'Popular' },
+            { value: 'en-US-EricNeural', label: '🇺🇸 Eric (Male, US) - Deep Voice', category: 'Popular' },
+            { value: 'en-US-GuyNeural', label: '🇺🇸 Guy (Male, US) - Mature', category: 'Popular' },
+            
+            // Standard Voices
+            { value: 'en-US-AnaNeural', label: '🇺🇸 Ana (Female, US) - Sophisticated', category: 'Standard' },
+            { value: 'en-US-RogerNeural', label: '🇺🇸 Roger (Male, US) - Authoritative', category: 'Standard' },
+            { value: 'en-US-SteffanNeural', label: '🇺🇸 Steffan (Male, US) - Clear', category: 'Standard' },
+            
+            // International Voices
+            { value: 'en-GB-SoniaNeural', label: '🇬🇧 Sonia (Female, UK) - British', category: 'International' },
+            { value: 'en-GB-RyanNeural', label: '🇬🇧 Ryan (Male, UK) - British', category: 'International' },
+            { value: 'en-AU-NatashaNeural', label: '🇦🇺 Natasha (Female, AU) - Australian', category: 'International' },
+            { value: 'en-AU-WilliamNeural', label: '🇦🇺 William (Male, AU) - Australian', category: 'International' },
+            { value: 'en-CA-ClaraNeural', label: '🇨🇦 Clara (Female, CA) - Canadian', category: 'International' },
+            { value: 'en-CA-LiamNeural', label: '🇨🇦 Liam (Male, CA) - Canadian', category: 'International' }
+        ];
+
+        // Load voice options
+        function loadVoiceOptions() {
+            const voiceSelect = document.getElementById('preferred-voice');
+            const currentVoice = "{{ preferences.preferred_voice if preferences else 'en-US-AriaNeural' }}";
+            
+            // Clear loading option
+            voiceSelect.innerHTML = '';
+            
+            // Group voices by category
+            const categories = {};
+            voiceOptions.forEach(voice => {
+                if (!categories[voice.category]) {
+                    categories[voice.category] = [];
+                }
+                categories[voice.category].push(voice);
+            });
+            
+            // Add grouped options
+            Object.keys(categories).forEach(category => {
+                const optgroup = document.createElement('optgroup');
+                optgroup.label = category;
+                
+                categories[category].forEach(voice => {
+                    const option = document.createElement('option');
+                    option.value = voice.value;
+                    option.textContent = voice.label;
+                    if (voice.value === currentVoice) {
+                        option.selected = true;
+                    }
+                    optgroup.appendChild(option);
+                });
+                
+                voiceSelect.appendChild(optgroup);
+            });
+        }
+
+        // Update display values for sliders
+        function updateSliderDisplays() {
+            const speedSlider = document.getElementById('voice-speed');
+            const speedDisplay = document.getElementById('speed-display');
+            const pitchSlider = document.getElementById('voice-pitch');
+            const pitchDisplay = document.getElementById('pitch-display');
+            
+            speedSlider.addEventListener('input', function() {
+                speedDisplay.textContent = this.value + 'x';
+            });
+            
+            pitchSlider.addEventListener('input', function() {
+                pitchDisplay.textContent = this.value + 'Hz';
+            });
+            
+            // Initialize displays
+            speedDisplay.textContent = speedSlider.value + 'x';
+            pitchDisplay.textContent = pitchSlider.value + 'Hz';
+        }
+
+        // Test voice settings (auto-triggered)
+        async function testVoiceSettings(showToast = false) {
+            const loadingDiv = document.getElementById('voice-loading');
+            const playerDiv = document.getElementById('voice-test-player');
+            
+            try {
+                // Show loading state
+                loadingDiv.classList.remove('hidden');
+                playerDiv.classList.add('hidden');
+                
+                const voiceSelect = document.getElementById('preferred-voice');
+                const speedSlider = document.getElementById('voice-speed');
+                const pitchSlider = document.getElementById('voice-pitch');
+                
+                // Get current values
+                const voice = voiceSelect.value;
+                const speed = speedSlider.value;
+                const pitch = pitchSlider.value;
+                
+                // Validate voice selection
+                if (!voice || voice === '') {
+                    console.log('No voice selected, skipping preview');
+                    loadingDiv.classList.add('hidden');
+                    return;
+                }
+                
+                console.log(`🎤 Testing voice: ${voice}, speed: ${speed}, pitch: ${pitch}`);
+                
+                const formData = new FormData();
+                formData.append('text', 'Hello! This is a preview of your voice preferences. The quick brown fox jumps over the lazy dog.');
+                formData.append('voice', voice);
+                formData.append('speed', speed);
+                formData.append('pitch', pitch + 'Hz');
+                
+                const response = await axios.post('/api/test-voice/', formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                        'Authorization': `Bearer {{ user.email }}`
+                    },
+                    timeout: 30000 // 30 second timeout
+                });
+                
+                if (response.data.audio_url) {
+                    // Hide loading and show player with audio
+                    loadingDiv.classList.add('hidden');
+                    
+                    const audioSource = document.getElementById('voice-test-source');
+                    const audioPlayer = document.getElementById('voice-test-audio');
+                    
+                    audioSource.src = response.data.audio_url + '?t=' + Date.now(); // Cache busting
+                    audioPlayer.load();
+                    playerDiv.classList.remove('hidden');
+                    
+                    // Setup event listeners for the test audio player
+                    setupTestAudioEventListeners();
+                    
+                    if (showToast) {
+                        showSuccessToast('Voice preview updated!', 'Preview Updated');
+                    }
+                } else {
+                    loadingDiv.classList.add('hidden');
+                    if (showToast) {
+                        showErrorToast('Failed to generate voice preview', 'Preview Failed');
+                    }
+                }
+            } catch (error) {
+                loadingDiv.classList.add('hidden');
+                console.error('Voice preview error:', error);
+                
+                if (showToast) {
+                    const errorMsg = error.response?.data?.detail || error.message || 'Unknown error';
+                    showErrorToast('Error generating voice preview: ' + errorMsg, 'Preview Failed');
+                }
+            }
+        }
+
+        // Hide voice test player
+        function hideVoiceTestPlayer() {
+            const playerDiv = document.getElementById('voice-test-player');
+            const audioPlayer = document.getElementById('voice-test-audio');
+            
+            audioPlayer.pause();
+            playerDiv.classList.add('hidden');
+        }
+
+        // Setup event listeners for test audio player
+        function setupTestAudioEventListeners() {
+            const audioElement = document.getElementById('voice-test-audio');
+            const currentTimeSpan = document.getElementById('test-current-time');
+            const durationSpan = document.getElementById('test-duration');
+            
+            // Remove existing listeners to avoid duplicates
+            audioElement.removeEventListener('timeupdate', updateTestTime);
+            audioElement.removeEventListener('loadedmetadata', loadTestMetadata);
+            
+            // Add new listeners
+            audioElement.addEventListener('timeupdate', updateTestTime);
+            audioElement.addEventListener('loadedmetadata', loadTestMetadata);
+            
+            function updateTestTime() {
+                if (currentTimeSpan && durationSpan) {
+                    const current = formatTime(audioElement.currentTime);
+                    const duration = formatTime(audioElement.duration);
+                    currentTimeSpan.textContent = current;
+                    durationSpan.textContent = duration;
+                }
+            }
+            
+            function loadTestMetadata() {
+                if (durationSpan) {
+                    durationSpan.textContent = formatTime(audioElement.duration);
+                }
+            }
+        }
+
+        // Change test audio speed
+        function changeTestSpeed() {
+            const audioElement = document.getElementById('voice-test-audio');
+            const speedSelect = document.getElementById('test-speed-control');
+            
+            if (audioElement && speedSelect) {
+                audioElement.playbackRate = parseFloat(speedSelect.value);
+            }
+        }
+
+        // Format time helper function
+        function formatTime(seconds) {
+            if (isNaN(seconds)) return '00:00';
+            const minutes = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        // Reset to defaults
+        function resetToDefaults() {
+            document.getElementById('preferred-voice').value = 'en-US-AriaNeural';
+            document.getElementById('voice-speed').value = '1.0';
+            document.getElementById('voice-pitch').value = '0';
+            updateSliderDisplays();
+            showInfoToast('Settings reset to defaults', 'Reset Complete');
+        }
+
+        // Save preferences
+        async function savePreferences(event) {
+            event.preventDefault();
+            
+            const saveBtn = document.getElementById('save-preferences-btn');
+            const originalText = saveBtn.innerHTML;
+            
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Saving...';
+            
+            try {
+                const formData = {
+                    preferred_voice: document.getElementById('preferred-voice').value,
+                    voice_speed: document.getElementById('voice-speed').value,
+                    voice_pitch: document.getElementById('voice-pitch').value + 'Hz'
+                };
+                
+                const response = await axios.post('/api/save-preferences/', formData, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer {{ user.email }}`
+                    }
+                });
+                
+                if (response.data.success) {
+                    showSuccessToast('Your voice preferences have been saved successfully!', 'Preferences Saved');
+                } else {
+                    showErrorToast('Failed to save preferences', 'Save Failed');
+                }
+            } catch (error) {
+                showErrorToast('Error saving preferences: ' + (error.response?.data?.detail || error.message), 'Save Failed');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = originalText;
+            }
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            loadVoiceOptions();
+            updateSliderDisplays();
+            
+            // Add form submit handler
+            document.getElementById('preferences-form').addEventListener('submit', savePreferences);
+            
+            // Add voice control change listeners for auto-preview
+            const voiceSelect = document.getElementById('preferred-voice');
+            const speedSlider = document.getElementById('voice-speed');
+            const pitchSlider = document.getElementById('voice-pitch');
+            
+            // Debounce function to prevent too many API calls
+            let previewTimeout;
+            function debouncePreview() {
+                clearTimeout(previewTimeout);
+                previewTimeout = setTimeout(() => testVoiceSettings(false), 1000);
+            }
+            
+            if (voiceSelect) {
+                voiceSelect.addEventListener('change', () => testVoiceSettings(true));
+            }
+            
+            if (speedSlider) {
+                speedSlider.addEventListener('input', debouncePreview);
+            }
+            
+            if (pitchSlider) {
+                pitchSlider.addEventListener('input', debouncePreview);
+            }
+            
+            // Load initial voice preview after a short delay to let the voice options load
+            setTimeout(() => {
+                testVoiceSettings(false);
+            }, 500);
+        });
+    </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Request, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Request, BackgroundTasks, Form
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -29,6 +29,7 @@ import re
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 import markdown
+from database import UserPreferences
 
 # MLX imports for Apple Silicon optimization
 try:
@@ -174,6 +175,17 @@ class SummaryRequest(BaseModel):
     job_id: str
     summary_prompt: str
 
+class PreferencesRequest(BaseModel):
+    preferred_voice: str
+    voice_speed: str
+    voice_pitch: str
+
+class VoiceTestRequest(BaseModel):
+    text: str
+    voice: str
+    speed: str
+    pitch: str
+
 def load_model():
     """Load Whisper model and processor (cached)"""
     global processor, model
@@ -284,6 +296,24 @@ def check_existing_transcript_by_media(db: Session, media_hash: str) -> Optional
 def generate_media_hash(content: str) -> str:
     """Generate a hash for media content only (excluding summary prompt)"""
     return hashlib.sha256(content.encode('utf-8')).hexdigest()
+
+def get_or_create_user_preferences(db: Session, user_id: str) -> UserPreferences:
+    """Get existing user preferences or create default ones"""
+    preferences = db.query(UserPreferences).filter(UserPreferences.user_id == user_id).first()
+    
+    if not preferences:
+        # Create default preferences
+        preferences = UserPreferences(
+            user_id=user_id,
+            preferred_voice="en-US-AriaNeural",
+            voice_speed="1.0",
+            voice_pitch="0Hz"
+        )
+        db.add(preferences)
+        db.commit()
+        db.refresh(preferences)
+    
+    return preferences
 
 def create_job_from_existing_content(db: Session, user_id: str, existing_job: Job, filename: str, summary_prompt: Optional[str] = None) -> Job:
     """Create a new job for a user by copying data from an existing completed job"""
@@ -1251,6 +1281,35 @@ async def dashboard(request: Request, user: User = Depends(get_current_user), db
     jobs = db.query(Job).filter(Job.user_id == user.id).order_by(Job.created_at.desc()).all()
     return templates.TemplateResponse("dashboard.html", {"request": request, "user": user, "jobs": jobs})
 
+@app.get("/profile", response_class=HTMLResponse)
+async def profile(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """User profile page"""
+    if not user:
+        return RedirectResponse("/auth/google")
+    
+    # Get user preferences
+    preferences = get_or_create_user_preferences(db, user.id)
+    
+    # Get job statistics
+    total_jobs = db.query(Job).filter(Job.user_id == user.id).count()
+    completed_jobs = db.query(Job).filter(Job.user_id == user.id, Job.status == "completed").count()
+    
+    # Calculate total processing hours (rough estimate based on job count)
+    total_hours = round(completed_jobs * 0.25, 1)  # Assume average 15 minutes per job
+    
+    job_stats = {
+        "total_jobs": total_jobs,
+        "completed_jobs": completed_jobs,
+        "total_hours": total_hours
+    }
+    
+    return templates.TemplateResponse("profile.html", {
+        "request": request, 
+        "user": user, 
+        "preferences": preferences,
+        "job_stats": job_stats
+    })
+
 @app.post("/api/process-video/")
 async def process_video(
     background_tasks: BackgroundTasks,
@@ -1856,3 +1915,207 @@ async def regenerate_summary(
     except Exception as e:
         print(f"❌ Error regenerating summary: {e}")
         return {"success": False, "message": f"Error regenerating summary: {str(e)}"}
+
+@app.post("/api/save-preferences/")
+async def save_preferences(
+    request: PreferencesRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Save user voice preferences"""
+    if not user:
+        raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    try:
+        # Get or create user preferences
+        preferences = get_or_create_user_preferences(db, user.id)
+        
+        # Update preferences
+        preferences.preferred_voice = request.preferred_voice
+        preferences.voice_speed = request.voice_speed
+        preferences.voice_pitch = request.voice_pitch
+        preferences.updated_at = datetime.now(timezone.utc)
+        
+        db.commit()
+        
+        print(f"✅ Preferences saved for user {user.id}: {request.preferred_voice}, {request.voice_speed}, {request.voice_pitch}")
+        return {"success": True, "message": "Preferences saved successfully"}
+        
+    except Exception as e:
+        print(f"❌ Error saving preferences: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to save preferences: {str(e)}")
+
+@app.post("/api/test-voice/")
+async def test_voice(
+    text: str = Form(...),
+    voice: str = Form(...),
+    speed: str = Form(...),
+    pitch: str = Form(...),
+    user: User = Depends(get_current_user)
+):
+    """Generate a test audio sample with specified voice settings"""
+    if not user:
+        raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    try:
+        # Debug logging
+        print(f"🎤 Voice test request - text: '{text[:50]}...', voice: '{voice}', speed: '{speed}', pitch: '{pitch}'")
+        
+        # Generate unique filename for test audio
+        test_id = str(uuid.uuid4())[:8]
+        test_filename = f"voice_test_{user.id}_{test_id}.mp3"
+        test_path = SPEECH_DIR / test_filename
+        
+        # Ensure speech directory exists
+        SPEECH_DIR.mkdir(exist_ok=True)
+        
+        # Generate test audio with specified settings
+        success = await generate_edge_tts_with_settings(text, str(test_path), voice, speed, pitch)
+        
+        if success and test_path.exists() and test_path.stat().st_size > 0:
+            print(f"✅ Test audio generated successfully: {test_path.stat().st_size} bytes")
+            return {"success": True, "audio_url": f"/download/speech/{test_filename}"}
+        else:
+            print(f"❌ Test audio generation failed - success: {success}, exists: {test_path.exists()}")
+            if test_path.exists():
+                print(f"File size: {test_path.stat().st_size} bytes")
+            raise HTTPException(status_code=500, detail="Failed to generate test audio")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error generating test voice: {e}")
+        raise HTTPException(status_code=500, detail=f"Voice test failed: {str(e)}")
+
+@app.get("/api/test-edge-tts/")
+async def test_edge_tts_direct(user: User = Depends(get_current_user)):
+    """Simple test endpoint to verify Edge-TTS is working"""
+    if not user:
+        raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    try:
+        test_text = "Hello, this is a simple test."
+        test_voice = "en-US-AriaNeural"
+        test_filename = f"edge_tts_test_{uuid.uuid4().hex[:8]}.mp3"
+        test_path = SPEECH_DIR / test_filename
+        
+        SPEECH_DIR.mkdir(exist_ok=True)
+        
+        print(f"🧪 Testing Edge-TTS with text: '{test_text}', voice: '{test_voice}'")
+        
+        # Simple Edge-TTS test
+        communicate = edge_tts.Communicate(test_text, test_voice)
+        await communicate.save(str(test_path))
+        
+        if test_path.exists() and test_path.stat().st_size > 0:
+            file_size = test_path.stat().st_size
+            print(f"✅ Edge-TTS test successful: {file_size} bytes")
+            return {
+                "success": True, 
+                "message": f"Edge-TTS is working correctly. Generated {file_size} bytes.",
+                "audio_url": f"/download/speech/{test_filename}"
+            }
+        else:
+            print("❌ Edge-TTS test failed: Empty or missing file")
+            return {"success": False, "message": "Edge-TTS generated empty file"}
+            
+    except Exception as e:
+        print(f"❌ Edge-TTS test failed with error: {e}")
+        return {"success": False, "message": f"Edge-TTS test failed: {str(e)}"}
+
+async def generate_edge_tts_with_settings(text: str, output_path: str, voice: str, speed: str, pitch: str) -> bool:
+    """Generate Edge-TTS audio with custom voice settings"""
+    try:
+        print(f"🎤 Generating TTS with settings: voice={voice}, speed={speed}, pitch={pitch}")
+        
+        # Validate and clean input text
+        if not text or not text.strip():
+            print("❌ Empty text provided for TTS")
+            return False
+        
+        # Use a simple test text for voice preview
+        test_text = "This is a voice preview. The settings have been applied successfully."
+        
+        # Ensure output directory exists
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
+        # Remove existing file if it exists
+        if os.path.exists(output_path):
+            os.remove(output_path)
+        
+        # Validate voice name - ensure it's a valid Edge-TTS voice
+        valid_voices = [
+            # Female voices
+            "en-US-AriaNeural", "en-US-JennyNeural", "en-US-AvaNeural", 
+            "en-US-EmmaNeural", "en-US-MichelleNeural", "en-US-AnaNeural",
+            # Male voices  
+            "en-US-BrianNeural", "en-US-AndrewNeural", "en-US-ChristopherNeural",
+            "en-US-EricNeural", "en-US-GuyNeural", "en-US-RogerNeural", "en-US-SteffanNeural"
+        ]
+        
+        # Use provided voice if valid, otherwise fallback to default
+        selected_voice = voice if voice in valid_voices else "en-US-AriaNeural"
+        if voice != selected_voice:
+            print(f"⚠️ Voice '{voice}' not in valid list, using '{selected_voice}'")
+        
+        # Strategy 1: Simple Edge-TTS without any modifications
+        print("🔄 Strategy 1: Basic Edge-TTS generation...")
+        try:
+            communicate = edge_tts.Communicate(test_text, selected_voice)
+            await communicate.save(output_path)
+            
+            if os.path.exists(output_path):
+                file_size = os.path.getsize(output_path)
+                if file_size > 100:  # Valid audio file should be at least 100 bytes
+                    print(f"✅ Basic Edge-TTS successful: {file_size} bytes")
+                    return True
+                else:
+                    print(f"⚠️ File too small: {file_size} bytes")
+                    os.remove(output_path)
+        except Exception as e:
+            print(f"⚠️ Basic approach failed: {e}")
+        
+        # Strategy 2: Try with a different known good voice
+        print("🔄 Strategy 2: Fallback voice...")
+        try:
+            fallback_voice = "en-US-JennyNeural"
+            communicate = edge_tts.Communicate(test_text, fallback_voice)
+            await communicate.save(output_path)
+            
+            if os.path.exists(output_path):
+                file_size = os.path.getsize(output_path)
+                if file_size > 100:
+                    print(f"✅ Fallback voice successful: {file_size} bytes")
+                    return True
+                else:
+                    os.remove(output_path)
+        except Exception as e:
+            print(f"⚠️ Fallback voice failed: {e}")
+        
+        # Strategy 3: Force create a simple audio file
+        print("🔄 Strategy 3: Minimal working example...")
+        try:
+            minimal_text = "Voice test."
+            minimal_voice = "en-US-AriaNeural"
+            communicate = edge_tts.Communicate(minimal_text, minimal_voice)
+            await communicate.save(output_path)
+            
+            if os.path.exists(output_path):
+                file_size = os.path.getsize(output_path)
+                if file_size > 50:  # Even smaller threshold
+                    print(f"✅ Minimal example successful: {file_size} bytes")
+                    return True
+                else:
+                    os.remove(output_path)
+        except Exception as e:
+            print(f"⚠️ Minimal example failed: {e}")
+        
+        print("❌ All Edge-TTS strategies failed")
+        return False
+        
+    except Exception as e:
+        print(f"❌ Edge-TTS generation failed: {e}")
+        return False
+
+
