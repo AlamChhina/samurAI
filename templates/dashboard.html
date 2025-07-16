@@ -215,8 +215,8 @@
             
             <!-- Tab Navigation -->
             <div class="flex space-x-4 mb-6 border-b border-gray-200">
-                <button id="youtube-tab" onclick="switchTab('youtube')" class="pb-2 px-1 text-red-600 border-b-2 border-red-600 font-medium">
-                    <i class="fab fa-youtube mr-1"></i>YouTube
+                <button id="video-url-tab" onclick="switchTab('video-url')" class="pb-2 px-1 text-red-600 border-b-2 border-red-600 font-medium">
+                    <i class="fas fa-video mr-1"></i>Video URL
                 </button>
                 <button id="video-tab" onclick="switchTab('video')" class="pb-2 px-1 text-gray-500 hover:text-gray-700 font-medium">
                     <i class="fas fa-file-video mr-1"></i>Upload Video
@@ -226,31 +226,31 @@
                 </button>
             </div>
             
-            <!-- YouTube URL Tab (Default) -->
-            <div id="youtube-url-section">
+            <!-- Video URL Tab (Default) -->
+            <div id="video-url-section">
                 <div class="space-y-4">
                     <div>
-                        <label for="youtube-url" class="block text-sm font-medium text-gray-700 mb-2">
-                            YouTube URL or Video ID
+                        <label for="video-url" class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-link mr-1 text-blue-600"></i>Video URL
                         </label>
                         <div class="flex space-x-3">
-                            <input type="text" id="youtube-url" placeholder="https://www.youtube.com/watch?v=wP3uQUZlhdo or wP3uQUZlhdo" 
+                            <input type="text" id="video-url" placeholder="Enter video URL from YouTube, Vimeo, Dailymotion, and more..." 
                                    class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-red-500 focus:border-transparent">
-                            <button onclick="processYouTubeURL()" id="youtube-submit-btn"
+                            <button onclick="processVideoURL()" id="video-submit-btn"
                                     class="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center">
-                                <i class="fab fa-youtube mr-2"></i>Process
+                                <i class="fas fa-video mr-2"></i>Process
                             </button>
                         </div>
                         <p class="text-xs text-gray-500 mt-1">
-                            Supports full YouTube URLs, YouTube Shorts, or just the video ID (11 characters)
+                            Supports YouTube, Vimeo, Dailymotion, Twitch, Facebook, Instagram, TikTok, Twitter/X, Reddit, and more
                         </p>
                     </div>
                     
                     <div>
-                        <label for="youtube-summary-prompt" class="block text-sm font-medium text-gray-700 mb-2">
+                        <label for="video-url-summary-prompt" class="block text-sm font-medium text-gray-700 mb-2">
                             <i class="fas fa-brain mr-1 text-purple-600"></i>Custom Summary Prompt (Optional)
                         </label>
-                        <textarea id="youtube-summary-prompt" 
+                        <textarea id="video-url-summary-prompt" 
                                   placeholder="Enter a custom prompt to guide the AI summary. For example: 'Focus on the key technical concepts and practical applications mentioned in this video.' Leave blank for default summary."
                                   rows="3"
                                   class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical"></textarea>
@@ -259,11 +259,11 @@
                         </p>
                     </div>
                     
-                    <div id="youtube-progress" class="hidden">
+                    <div id="video-url-progress" class="hidden">
                         <div class="bg-red-50 rounded-lg p-4">
                             <div class="flex items-center justify-between mb-2">
                                 <span class="text-sm font-medium text-red-700">
-                                    <i class="fas fa-download mr-1"></i>Downloading from YouTube...
+                                    <i class="fas fa-download mr-1"></i>Processing video...
                                 </span>
                                 <span class="text-sm text-red-600">Please wait</span>
                             </div>
@@ -584,9 +584,9 @@
                     </div>
                 {% else %}
                     <div class="text-center py-12">
-                        <i class="fab fa-youtube text-6xl text-red-300 mb-4"></i>
+                        <i class="fas fa-video text-6xl text-blue-300 mb-4"></i>
                         <h3 class="text-xl font-semibold text-gray-500 mb-2">No jobs yet</h3>
-                        <p class="text-gray-400">Enter a YouTube URL to get started</p>
+                        <p class="text-gray-400">Upload a video file or enter a video URL to get started</p>
                     </div>
                 {% endif %}
             </div>
@@ -900,13 +900,13 @@
         function switchTab(tabName) {
             const videoTab = document.getElementById('video-tab');
             const audioTab = document.getElementById('audio-tab');
-            const youtubeTab = document.getElementById('youtube-tab');
+            const videoUrlTab = document.getElementById('video-url-tab');
             const videoSection = document.getElementById('video-upload-section');
             const audioSection = document.getElementById('audio-upload-section');
-            const youtubeSection = document.getElementById('youtube-url-section');
+            const videoUrlSection = document.getElementById('video-url-section');
 
             // Reset all tabs
-            [videoTab, audioTab, youtubeTab].forEach(tab => {
+            [videoTab, audioTab, videoUrlTab].forEach(tab => {
                 if (tab) {
                     tab.classList.remove('text-blue-600', 'text-green-600', 'text-red-600', 'border-b-2', 'border-blue-600', 'border-green-600', 'border-red-600');
                     tab.classList.add('text-gray-500');
@@ -914,7 +914,7 @@
             });
 
             // Hide all sections
-            [videoSection, audioSection, youtubeSection].forEach(section => {
+            [videoSection, audioSection, videoUrlSection].forEach(section => {
                 if (section) section.classList.add('hidden');
             });
 
@@ -926,41 +926,41 @@
                 audioTab.classList.add('text-green-600', 'border-b-2', 'border-green-600');
                 audioTab.classList.remove('text-gray-500');
                 audioSection.classList.remove('hidden');
-            } else if (tabName === 'youtube') {
-                youtubeTab.classList.add('text-red-600', 'border-b-2', 'border-red-600');
-                youtubeTab.classList.remove('text-gray-500');
-                youtubeSection.classList.remove('hidden');
+            } else if (tabName === 'video-url') {
+                videoUrlTab.classList.add('text-red-600', 'border-b-2', 'border-red-600');
+                videoUrlTab.classList.remove('text-gray-500');
+                videoUrlSection.classList.remove('hidden');
             }
         }
 
-        // YouTube URL processing
-        async function processYouTubeURL() {
-            const youtubeInput = document.getElementById('youtube-url').value.trim();
-            const summaryPrompt = document.getElementById('youtube-summary-prompt').value.trim();
-            const youtubeProgress = document.getElementById('youtube-progress');
-            const submitBtn = document.getElementById('youtube-submit-btn');
+        // Video URL processing
+        async function processVideoURL() {
+            const videoInput = document.getElementById('video-url').value.trim();
+            const summaryPrompt = document.getElementById('video-url-summary-prompt').value.trim();
+            const videoProgress = document.getElementById('video-url-progress');
+            const submitBtn = document.getElementById('video-submit-btn');
 
-            if (!youtubeInput) {
-                showWarningToast('Please enter a YouTube URL or video ID', 'Missing Input');
+            if (!videoInput) {
+                showWarningToast('Please enter a video URL', 'Missing Input');
                 return;
             }
 
-            // Validate YouTube URL format or video ID (11 characters)
-            const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)\/.+/;
-            const videoIdRegex = /^[a-zA-Z0-9_-]{11}$/;
+            // Basic URL validation - check if it looks like a URL or YouTube video ID
+            const urlRegex = /^(https?:\/\/)|(www\.)/;
+            const youtubeIdRegex = /^[a-zA-Z0-9_-]{11}$/;
             
-            if (!youtubeRegex.test(youtubeInput) && !videoIdRegex.test(youtubeInput)) {
-                showErrorToast('Please enter a valid YouTube URL or 11-character video ID', 'Invalid Format');
+            if (!urlRegex.test(videoInput) && !youtubeIdRegex.test(videoInput) && !videoInput.includes('.')) {
+                showErrorToast('Please enter a valid video URL', 'Invalid Format');
                 return;
             }
 
-            youtubeProgress.classList.remove('hidden');
+            videoProgress.classList.remove('hidden');
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processing...';
 
             try {
                 const requestData = {
-                    url: youtubeInput
+                    url: videoInput
                 };
                 
                 // Only include custom prompt if provided
@@ -968,7 +968,7 @@
                     requestData.summary_prompt = summaryPrompt;
                 }
 
-                const response = await axios.post('/api/process-youtube/', requestData, {
+                const response = await axios.post('/api/process-video-url/', requestData, {
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer {{ user.email }}`
@@ -977,32 +977,37 @@
 
                 if (response.data.job_id) {
                     if (response.data.duplicate) {
-                        showInfoToast(`This YouTube video has already been processed! Showing existing results (Job ID: ${response.data.job_id})`, 'Already Processed');
+                        showInfoToast(`This video has already been processed! Showing existing results (Job ID: ${response.data.job_id})`, 'Already Processed');
                     } else if (response.data.reused) {
-                        showSuccessToast(`🚀 This YouTube video was already processed by another user! Created instant copy for you (Job ID: ${response.data.job_id})`, 'Instant Copy Created');
+                        showSuccessToast(`🚀 This video was already processed by another user! Created instant copy for you (Job ID: ${response.data.job_id})`, 'Instant Copy Created');
                     } else {
-                        showInfoToast('YouTube video processing started! This may take several minutes.', 'Processing Started');
+                        showInfoToast('Video processing started! This may take several minutes.', 'Processing Started');
                     }
-                    document.getElementById('youtube-url').value = '';
-                    document.getElementById('youtube-summary-prompt').value = '';
+                    document.getElementById('video-url').value = '';
+                    document.getElementById('video-url-summary-prompt').value = '';
                     setTimeout(refreshJobs, 1000);
                 }
             } catch (error) {
-                showErrorToast('YouTube processing failed: ' + (error.response?.data?.detail || error.message), 'Processing Failed');
+                showErrorToast('Video processing failed: ' + (error.response?.data?.detail || error.message), 'Processing Failed');
             } finally {
-                youtubeProgress.classList.add('hidden');
+                videoProgress.classList.add('hidden');
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i class="fab fa-youtube mr-2"></i>Process';
+                submitBtn.innerHTML = '<i class="fas fa-video mr-2"></i>Process';
             }
         }
 
-        // Allow Enter key to submit YouTube URL
+        // YouTube URL processing (backward compatibility)
+        async function processYouTubeURL() {
+            return await processVideoURL();
+        }
+
+        // Allow Enter key to submit Video URL
         document.addEventListener('DOMContentLoaded', () => {
-            const youtubeInput = document.getElementById('youtube-url');
-            if (youtubeInput) {
-                youtubeInput.addEventListener('keypress', (e) => {
+            const videoInput = document.getElementById('video-url');
+            if (videoInput) {
+                videoInput.addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') {
-                        processYouTubeURL();
+                        processVideoURL();
                     }
                 });
             }

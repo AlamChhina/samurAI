@@ -226,8 +226,8 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)):
     except Exception:
         return None
 
-def is_valid_youtube_url_or_id(input_str: str) -> bool:
-    """Validate if the input is a valid YouTube URL or video ID"""
+def is_valid_video_url_or_id(input_str: str) -> bool:
+    """Validate if the input is a valid video URL or YouTube video ID"""
     # Check if it's a valid YouTube URL
     youtube_url_patterns = [
         r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/',
@@ -241,12 +241,44 @@ def is_valid_youtube_url_or_id(input_str: str) -> bool:
         if re.search(pattern, input_str, re.IGNORECASE):
             return True
     
-    # Check if it's a valid video ID (11 characters, alphanumeric with - and _)
-    video_id_pattern = r'^[a-zA-Z0-9_-]{11}$'
-    if re.match(video_id_pattern, input_str.strip()):
+    # Check if it's a valid YouTube video ID (11 characters, alphanumeric with - and _)
+    youtube_video_id_pattern = r'^[a-zA-Z0-9_-]{11}$'
+    if re.match(youtube_video_id_pattern, input_str.strip()):
         return True
     
+    # Check for Vimeo URLs
+    vimeo_patterns = [
+        r'(https?://)?(www\.)?vimeo\.com/\d+',
+        r'(https?://)?player\.vimeo\.com/video/\d+',
+    ]
+    
+    for pattern in vimeo_patterns:
+        if re.search(pattern, input_str, re.IGNORECASE):
+            return True
+    
+    # Check for other common video platforms that yt-dlp supports
+    supported_platforms = [
+        r'(https?://)?(www\.)?dailymotion\.com/',
+        r'(https?://)?(www\.)?twitch\.tv/',
+        r'(https?://)?(www\.)?facebook\.com/.*/videos/',
+        r'(https?://)?(www\.)?instagram\.com/.*/p/',
+        r'(https?://)?(www\.)?tiktok\.com/',
+        r'(https?://)?(www\.)?twitter\.com/.*/status/',
+        r'(https?://)?x\.com/.*/status/',
+        r'(https?://)?(www\.)?reddit\.com/r/.*/comments/',
+        r'(https?://)?(www\.)?streamable\.com/',
+        r'(https?://)?(www\.)?archive\.org/details/',
+    ]
+    
+    for pattern in supported_platforms:
+        if re.search(pattern, input_str, re.IGNORECASE):
+            return True
+    
     return False
+
+def is_valid_youtube_url_or_id(input_str: str) -> bool:
+    """Validate if the input is a valid YouTube URL or video ID (backward compatibility)"""
+    return is_valid_video_url_or_id(input_str)
 
 def is_valid_youtube_url(url: str) -> bool:
     """Validate if the URL is a valid YouTube URL (backward compatibility)"""
@@ -407,12 +439,12 @@ def create_job_from_existing_content(db: Session, user_id: str, existing_job: Jo
     print(f"✅ Created new job {new_job_id} by reusing content from job {existing_job.id}")
     return new_job
 
-async def download_youtube_video(url: str) -> Optional[tuple[str, str]]:
-    """Download YouTube video and return the local file path"""
+async def download_video_from_url(url: str) -> Optional[tuple[str, str]]:
+    """Download video from supported platforms using yt-dlp and return the local file path"""
     try:
         def _download():
             # Create temporary filename
-            temp_filename = f"temp_youtube_{uuid.uuid4().hex}"
+            temp_filename = f"temp_video_{uuid.uuid4().hex}"
             
             # yt-dlp options for best quality video with audio
             ydl_opts = {
@@ -427,7 +459,7 @@ async def download_youtube_video(url: str) -> Optional[tuple[str, str]]:
                 'writeautomaticsub': False,
             }
             
-            print(f"Downloading YouTube video: {url}")
+            print(f"Downloading video from: {url}")
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 # Extract info to get the title and filename
@@ -453,8 +485,12 @@ async def download_youtube_video(url: str) -> Optional[tuple[str, str]]:
         result = await asyncio.to_thread(_download)
         return result
     except Exception as e:
-        print(f"Error downloading YouTube video: {str(e)}")
+        print(f"Error downloading video: {str(e)}")
         return None, None
+
+async def download_youtube_video(url: str) -> Optional[tuple[str, str]]:
+    """Download YouTube video and return the local file path (backward compatibility)"""
+    return await download_video_from_url(url)
 
 async def extract_audio_from_video(video_path: str) -> Optional[str]:
     """Extract audio from video file and save as temporary WAV file"""
@@ -1005,10 +1041,10 @@ async def process_youtube_background(job_id: str, youtube_url: str, custom_promp
             # Fall back to normal flow: download + Whisper
             print("⬇️ Fast transcript not available, falling back to download + Whisper...")
             
-            # Download YouTube video
-            download_result = await download_youtube_video(youtube_url)
+            # Download video from supported platform
+            download_result = await download_video_from_url(youtube_url)
             if not download_result:
-                raise RuntimeError("Failed to download YouTube video")
+                raise RuntimeError("Failed to download video")
             
             video_path, video_title = download_result
             
@@ -1122,6 +1158,58 @@ def extract_youtube_video_id(url_or_id: str) -> Optional[str]:
             return match.group(1)
     return None
 
+def extract_video_id_from_url(url: str) -> Optional[tuple[str, str]]:
+    """Extract video ID and platform from various video URLs. Returns (platform, video_id)"""
+    # YouTube patterns
+    youtube_patterns = [
+        (r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/|youtube\.com/v/)([^&\n?#]+)', 'youtube'),
+        (r'youtube\.com/watch\?.*v=([^&\n?#]+)', 'youtube'),
+    ]
+    
+    for pattern, platform in youtube_patterns:
+        match = re.search(pattern, url, re.IGNORECASE)
+        if match:
+            return platform, match.group(1)
+    
+    # Check if it's a plain YouTube video ID (11 characters)
+    youtube_video_id_pattern = r'^[a-zA-Z0-9_-]{11}$'
+    if re.match(youtube_video_id_pattern, url.strip()):
+        return 'youtube', url.strip()
+    
+    # Vimeo patterns
+    vimeo_patterns = [
+        (r'vimeo\.com/(\d+)', 'vimeo'),
+        (r'player\.vimeo\.com/video/(\d+)', 'vimeo'),
+    ]
+    
+    for pattern, platform in vimeo_patterns:
+        match = re.search(pattern, url, re.IGNORECASE)
+        if match:
+            return platform, match.group(1)
+    
+    # For other platforms, use the full URL as the identifier
+    if 'dailymotion.com' in url.lower():
+        return 'dailymotion', url
+    elif 'twitch.tv' in url.lower():
+        return 'twitch', url
+    elif 'facebook.com' in url.lower():
+        return 'facebook', url
+    elif 'instagram.com' in url.lower():
+        return 'instagram', url
+    elif 'tiktok.com' in url.lower():
+        return 'tiktok', url
+    elif 'twitter.com' in url.lower() or 'x.com' in url.lower():
+        return 'twitter', url
+    elif 'reddit.com' in url.lower():
+        return 'reddit', url
+    elif 'streamable.com' in url.lower():
+        return 'streamable', url
+    elif 'archive.org' in url.lower():
+        return 'archive', url
+    else:
+        # Default to generic URL platform
+        return 'video', url
+
 def normalize_youtube_input(url_or_id: str) -> str:
     """Convert video ID to full YouTube URL or return the URL as-is"""
     # Check if it's a plain video ID
@@ -1131,6 +1219,18 @@ def normalize_youtube_input(url_or_id: str) -> str:
     
     # If it's already a URL, return as-is
     return url_or_id
+
+def normalize_video_input(url: str) -> str:
+    """Normalize video input to a standard format"""
+    # For YouTube, convert ID to full URL
+    if len(url.strip()) == 11 and re.match(r'^[a-zA-Z0-9_-]{11}$', url.strip()):
+        return f"https://www.youtube.com/watch?v={url.strip()}"
+    
+    # For other platforms, ensure we have a proper URL
+    if not url.startswith(('http://', 'https://')):
+        return f"https://{url}"
+    
+    return url
 
 def get_youtube_transcript(url: str) -> Optional[tuple[str, str]]:
     """
@@ -1546,31 +1646,35 @@ async def process_audio(
     
     return {"job_id": job.id, "status": "pending", "message": "Audio processing started"}
 
-@app.post("/api/process-youtube/")
-async def process_youtube(
+@app.post("/api/process-video-url/")
+async def process_video_url(
     background_tasks: BackgroundTasks,
     request: YouTubeRequest,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Process YouTube video from URL or video ID"""
+    """Process video from supported platforms (YouTube, Vimeo, etc.) using yt-dlp"""
     if not user:
         raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
     
-    # Validate YouTube URL or video ID
-    if not is_valid_youtube_url_or_id(request.url):
-        raise HTTPException(status_code=400, detail="Invalid YouTube URL or video ID")
+    # Validate video URL or YouTube video ID
+    if not is_valid_video_url_or_id(request.url):
+        raise HTTPException(status_code=400, detail="Invalid video URL or YouTube video ID")
     
     # Normalize input to full URL format
-    normalized_url = normalize_youtube_input(request.url)
+    normalized_url = normalize_video_input(request.url)
     
     # Generate content hash for duplicate detection
-    video_id = extract_youtube_video_id(normalized_url)
+    platform_info = extract_video_id_from_url(normalized_url)
+    if not platform_info:
+        raise HTTPException(status_code=400, detail="Could not extract video information from URL")
+    
+    platform, video_id = platform_info
     
     # Create two hashes: one for media content, one for complete job (including prompt)
-    media_identifier = f"youtube:{video_id}"
+    media_identifier = f"{platform}:{video_id}"
     media_hash = generate_media_hash(media_identifier)
-    content_identifier = f"youtube:{video_id}:{request.summary_prompt or 'default'}"
+    content_identifier = f"{platform}:{video_id}:{request.summary_prompt or 'default'}"
     content_hash = generate_content_hash(content_identifier)
     
     # Check for existing job by this user with same prompt first
@@ -1579,7 +1683,7 @@ async def process_youtube(
         return {
             "job_id": existing_user_job.id, 
             "status": existing_user_job.status, 
-            "message": f"This YouTube video with the same prompt has already been processed (Job ID: {existing_user_job.id})",
+            "message": f"This video with the same prompt has already been processed (Job ID: {existing_user_job.id})",
             "duplicate": True
         }
     
@@ -1589,7 +1693,7 @@ async def process_youtube(
         # Create job for this user
         job = Job(
             user_id=user.id,
-            filename=f"YouTube: {normalized_url}",
+            filename=f"{platform.title()}: {normalized_url}",
             content_hash=content_hash,
             media_hash=media_hash,
             status="pending",
@@ -1605,7 +1709,7 @@ async def process_youtube(
         return {
             "job_id": job.id, 
             "status": "pending", 
-            "message": "YouTube transcript already exists. Generating new summary with your prompt...",
+            "message": f"{platform.title()} transcript already exists. Generating new summary with your prompt...",
             "reused_transcript": True
         }
     
@@ -1615,19 +1719,19 @@ async def process_youtube(
         # Create a new job for this user by copying the existing content
         new_job = create_job_from_existing_content(
             db, user.id, existing_processed_job, 
-            f"YouTube: {normalized_url}", request.summary_prompt
+            f"{platform.title()}: {normalized_url}", request.summary_prompt
         )
         return {
             "job_id": new_job.id, 
             "status": "completed", 
-            "message": f"YouTube video was already processed with same prompt. Created instant copy for you (Job ID: {new_job.id})",
+            "message": f"{platform.title()} video was already processed with same prompt. Created instant copy for you (Job ID: {new_job.id})",
             "reused": True
         }
     
     # Create job with URL as filename initially
     job = Job(
         user_id=user.id,
-        filename=f"YouTube: {normalized_url}",
+        filename=f"{platform.title()}: {normalized_url}",
         content_hash=content_hash,
         media_hash=media_hash,
         status="pending",
@@ -1637,10 +1741,20 @@ async def process_youtube(
     db.commit()
     db.refresh(job)
     
-    # Start background processing for YouTube
+    # Start background processing for video
     background_tasks.add_task(process_youtube_background, job.id, normalized_url, request.summary_prompt)
     
-    return {"job_id": job.id, "status": "pending", "message": "YouTube video processing started"}
+    return {"job_id": job.id, "status": "pending", "message": f"{platform.title()} video processing started"}
+
+@app.post("/api/process-youtube/")
+async def process_youtube(
+    background_tasks: BackgroundTasks,
+    request: YouTubeRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Process YouTube video from URL or video ID (backward compatibility)"""
+    return await process_video_url(background_tasks, request, user, db)
 
 @app.get("/api/jobs/", response_model=list[JobResponse])
 async def get_user_jobs(user: User = Depends(get_current_user), db: Session = Depends(get_db)):

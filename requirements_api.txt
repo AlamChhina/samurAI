@@ -15,8 +15,8 @@ standard-aifc>=3.13.0
 standard-chunk>=3.13.0
 standard-sunau>=3.13.0
 
-# YouTube video download
-yt-dlp>=2023.12.30
+# YouTube and video download (supports many platforms)
+yt-dlp>=2024.12.13
 
 # Text-to-Speech (edge-tts only)
 edge-tts>=7.0.0
