@@ -18,7 +18,7 @@ A robust async FastAPI service that processes videos to extract audio, generate 
 1. **Install Python dependencies:**
    ```bash
    pip install -r requirements.txt
-   pip install -r requirements_async.txt
+   pip install -r requirements.txt
    ```
 
 2. **Set up Google OAuth:**
@@ -91,7 +91,7 @@ python-scripts/
 ├── outputs/                   # Generated files
 │   ├── transcripts/           # Text transcriptions
 │   └── speech/               # Generated speech
-├── requirements_async.txt     # Async service dependencies
+├── requirements.txt           # All service dependencies
 └── .env.example              # Environment template
 ```
 

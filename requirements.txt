@@ -1,3 +1,80 @@
-requests
-beautifulsoup4
-markdown
+# Video Audio Text Service - Complete Dependencies
+# Unified requirements file for all functionality
+
+# ==========================================
+# Core FastAPI Web Framework
+# ==========================================
+fastapi==0.115.7
+uvicorn==0.34.0
+python-multipart==0.0.20
+jinja2>=3.1.0
+
+# ==========================================
+# Video/Audio Processing Pipeline
+# ==========================================
+moviepy==2.2.1
+torch==2.7.1
+transformers==4.53.2
+librosa==0.10.2
+timm==1.0.11
+accelerate>=0.21.0
+
+# Python 3.13 compatibility for audio modules
+standard-aifc>=3.13.0
+standard-chunk>=3.13.0
+standard-sunau>=3.13.0
+
+# ==========================================
+# Video Download & Platform Support
+# ==========================================
+# YouTube and multi-platform video download (supports 1000+ platforms)
+yt-dlp>=2024.12.13
+youtube-transcript-api>=0.6.0
+
+# ==========================================
+# Text-to-Speech (TTS)
+# ==========================================
+# Microsoft Edge-TTS (high-quality neural voices)
+edge-tts>=7.0.0
+
+# ==========================================
+# AI & Machine Learning
+# ==========================================
+# Google Generative AI for enhanced summarization
+google-generativeai>=0.7.0
+
+# ==========================================
+# Database & Async Support
+# ==========================================
+sqlalchemy>=2.0.0
+aiofiles>=24.0.0
+httpx>=0.28.0
+
+# ==========================================
+# Authentication & Security
+# ==========================================
+PyJWT>=2.10.0
+python-dotenv>=1.1.0
+
+# ==========================================
+# Web Scraping & Content Processing
+# ==========================================
+requests>=2.32.0
+beautifulsoup4>=4.13.0
+markdown>=3.8.0
+
+# ==========================================
+# Optional MLX Support (Apple Silicon)
+# ==========================================
+# Uncomment these lines if you want MLX support for Apple Silicon:
+# mlx>=0.19.0
+# mlx-lm>=0.19.0
+
+# ==========================================
+# Development & Testing (Optional)
+# ==========================================
+# Uncomment for development:
+# pytest>=7.0.0
+# pytest-asyncio>=0.21.0
+# black>=23.0.0
+# flake8>=6.0.0

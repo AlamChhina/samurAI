@@ -84,7 +84,7 @@ python-scripts/
 ├── outputs/                   # Generated files
 │   ├── transcripts/           # Text transcriptions
 │   └── speech/               # Generated speech
-├── requirements_async.txt     # Additional dependencies ⭐
+├── requirements.txt           # All dependencies ⭐
 ├── .env.example              # Environment template ⭐
 ├── README_ASYNC.md           # Complete documentation ⭐
 ├── start_async_service.sh    # Service startup script ⭐
@@ -98,7 +98,7 @@ python-scripts/
 ```bash
 # 1. Install dependencies
 pip install -r requirements.txt
-pip install -r requirements_async.txt
+pip install -r requirements.txt
 
 # 2. Configure Google OAuth
 cp .env.example .env

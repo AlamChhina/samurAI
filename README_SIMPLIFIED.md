@@ -95,7 +95,7 @@ async_video_service.py     # Main service
 edge_tts_helper.py        # Voice configuration helper
 test_voice_quality.py     # Voice quality testing
 .env                      # Configuration
-requirements_async.txt    # Dependencies
+requirements.txt          # All dependencies
 database.py              # Database models
 templates/               # HTML templates
 static/                  # CSS/JS files
