@@ -66,9 +66,123 @@
         .markdown-content em {
             font-style: italic;
         }
+        
+        /* Toast notification styles */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            max-width: 400px;
+        }
+        
+        .toast {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            margin-bottom: 10px;
+            padding: 16px;
+            border-left: 4px solid;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .toast.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+        
+        .toast.success {
+            border-left-color: #10b981;
+        }
+        
+        .toast.error {
+            border-left-color: #ef4444;
+        }
+        
+        .toast.info {
+            border-left-color: #3b82f6;
+        }
+        
+        .toast.warning {
+            border-left-color: #f59e0b;
+        }
+        
+        .toast-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 12px;
+            font-size: 12px;
+        }
+        
+        .toast.success .toast-icon {
+            background-color: #d1fae5;
+            color: #059669;
+        }
+        
+        .toast.error .toast-icon {
+            background-color: #fee2e2;
+            color: #dc2626;
+        }
+        
+        .toast.info .toast-icon {
+            background-color: #dbeafe;
+            color: #2563eb;
+        }
+        
+        .toast.warning .toast-icon {
+            background-color: #fef3c7;
+            color: #d97706;
+        }
+        
+        .toast-content {
+            display: flex;
+            align-items: flex-start;
+        }
+        
+        .toast-message {
+            flex: 1;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        
+        .toast-title {
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 4px;
+        }
+        
+        .toast-description {
+            color: #6b7280;
+        }
+        
+        .toast-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: none;
+            border: none;
+            color: #9ca3af;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px;
+        }
+        
+        .toast-close:hover {
+            color: #6b7280;
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+    
     <nav class="bg-white shadow-sm border-b">
         <div class="container mx-auto px-4 py-4">
             <div class="flex justify-between items-center">
@@ -261,8 +375,8 @@
                     <div class="space-y-4">
                         {% for job in jobs %}
                         <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                            <div class="flex justify-between items-start">
-                                <div class="flex-1">
+                            <div class="flex justify-between items-start mb-4">
+                                <div class="flex-1 mr-4">
                                     <div class="flex items-center space-x-3 mb-2">
                                         <h3 class="font-semibold text-gray-800">{{ job.filename }}</h3>
                                         <span class="px-2 py-1 rounded-full text-xs font-medium
@@ -276,6 +390,14 @@
                                             {% else %}<i class="fas fa-clock mr-1"></i>{% endif %}
                                             {{ job.status.title() }}
                                         </span>
+                                        {% if job.status == 'completed' and job.summary %}
+                                        <button onclick="showEditPromptModal(this)" 
+                                                data-job-id="{{ job.id }}"
+                                                data-current-prompt="{{ job.summary_prompt or '' }}"
+                                                class="bg-purple-600 text-white px-3 py-1 rounded text-xs hover:bg-purple-700 transition-colors">
+                                            <i class="fas fa-edit mr-1"></i>Edit Prompt
+                                        </button>
+                                        {% endif %}
                                     </div>
                                     <p class="text-sm text-gray-600">
                                         Created: {{ job.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
@@ -310,7 +432,7 @@
                                         {% endif %}
                                         
                                         <!-- Content area that can switch between summary text and audio player -->
-                                        <div id="content-{{ job.id }}" class="w-full">
+                                        <div id="content-{{ job.id }}" class="w-full max-w-none">
                                             <div class="text-sm text-blue-700 leading-relaxed markdown-content">
                                                 {{ job.summary | markdown | safe }}
                                             </div>
@@ -360,7 +482,7 @@
                                     {% endif %}
                                 </div>
                                 
-                                <div class="flex items-center space-x-2">
+                                <div class="flex items-start space-x-2 flex-shrink-0">
                                     {% if job.status == 'completed' %}
                                         <!-- Smart Default Action Button -->
                                         <div class="relative">
@@ -368,8 +490,8 @@
                                             <div class="flex">
                                                 <button onclick="performDefaultAction('{{ job.id }}', '{{ job.summary_speech_file }}', 'Summary')" 
                                                         id="default-btn-{{ job.id }}"
-                                                        class="bg-indigo-600 text-white px-4 py-2 rounded-l text-sm hover:bg-indigo-700 transition-colors flex items-center">
-                                                    <i class="fas fa-play mr-2"></i><span id="btn-text-{{ job.id }}">Summary</span>
+                                                        class="bg-indigo-600 text-white px-3 py-2 rounded-l text-sm hover:bg-indigo-700 transition-colors flex items-center">
+                                                    <i class="fas fa-play mr-1"></i><span id="btn-text-{{ job.id }}">Summary</span>
                                                 </button>
                                                 <button onclick="toggleJobActions('{{ job.id }}')" 
                                                         class="bg-indigo-600 text-white px-2 py-2 rounded-r text-sm hover:bg-indigo-700 transition-colors border-l border-indigo-500">
@@ -379,9 +501,9 @@
                                             {% else %}
                                             <button onclick="toggleJobActions('{{ job.id }}')" 
                                                     id="default-btn-{{ job.id }}"
-                                                    class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition-colors flex items-center">
-                                                <i class="fas fa-cog mr-2"></i><span id="btn-text-{{ job.id }}">Actions</span>
-                                                <i class="fas fa-chevron-down ml-2"></i>
+                                                    class="bg-blue-600 text-white px-3 py-2 rounded text-sm hover:bg-blue-700 transition-colors flex items-center">
+                                                <i class="fas fa-cog mr-1"></i><span id="btn-text-{{ job.id }}">Actions</span>
+                                                <i class="fas fa-chevron-down ml-1"></i>
                                             </button>
                                             {% endif %}
                                             
@@ -528,6 +650,82 @@
     </div>
 
     <script>
+        // Toast notification system
+        function showToast(message, type = 'info', title = null, duration = 5000) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            const icons = {
+                success: 'fas fa-check',
+                error: 'fas fa-times',
+                warning: 'fas fa-exclamation',
+                info: 'fas fa-info'
+            };
+            
+            const titles = {
+                success: title || 'Success',
+                error: title || 'Error',
+                warning: title || 'Warning',
+                info: title || 'Information'
+            };
+            
+            toast.innerHTML = `
+                <div class="toast-content">
+                    <div class="toast-icon">
+                        <i class="${icons[type]}"></i>
+                    </div>
+                    <div class="toast-message">
+                        <div class="toast-title">${titles[type]}</div>
+                        <div class="toast-description">${message}</div>
+                    </div>
+                </div>
+                <button class="toast-close" onclick="hideToast(this.parentElement)">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            
+            container.appendChild(toast);
+            
+            // Trigger animation
+            setTimeout(() => {
+                toast.classList.add('show');
+            }, 10);
+            
+            // Auto-hide after duration
+            setTimeout(() => {
+                hideToast(toast);
+            }, duration);
+            
+            return toast;
+        }
+        
+        function hideToast(toast) {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                if (toast.parentElement) {
+                    toast.parentElement.removeChild(toast);
+                }
+            }, 300);
+        }
+        
+        // Convenience functions
+        function showSuccessToast(message, title = null) {
+            return showToast(message, 'success', title);
+        }
+        
+        function showErrorToast(message, title = null) {
+            return showToast(message, 'error', title);
+        }
+        
+        function showWarningToast(message, title = null) {
+            return showToast(message, 'warning', title);
+        }
+        
+        function showInfoToast(message, title = null) {
+            return showToast(message, 'info', title);
+        }
+
         // Global audio player variables
         let currentAudio = null;
         let currentJobId = null;
@@ -629,17 +827,17 @@
 
                 if (response.data.job_id) {
                     if (response.data.duplicate) {
-                        alert(`This video has already been processed! Showing existing results (Job ID: ${response.data.job_id})`);
+                        showInfoToast(`This video has already been processed! Showing existing results (Job ID: ${response.data.job_id})`, 'Already Processed');
                     } else if (response.data.reused) {
-                        alert(`🚀 This video was already processed by another user! Created instant copy for you (Job ID: ${response.data.job_id})`);
+                        showSuccessToast(`🚀 This video was already processed by another user! Created instant copy for you (Job ID: ${response.data.job_id})`, 'Instant Copy Created');
                     } else {
-                        alert('Video uploaded successfully! Processing started.');
+                        showSuccessToast('Video uploaded successfully! Processing started.', 'Upload Complete');
                     }
                     document.getElementById('video-summary-prompt').value = '';
                     setTimeout(refreshJobs, 1000);
                 }
             } catch (error) {
-                alert('Upload failed: ' + (error.response?.data?.detail || error.message));
+                showErrorToast('Upload failed: ' + (error.response?.data?.detail || error.message), 'Upload Failed');
             } finally {
                 videoProgressDiv.classList.add('hidden');
                 videoProgressBar.style.width = '0%';
@@ -675,17 +873,17 @@
 
                 if (response.data.job_id) {
                     if (response.data.duplicate) {
-                        alert(`This audio file has already been processed! Showing existing results (Job ID: ${response.data.job_id})`);
+                        showInfoToast(`This audio file has already been processed! Showing existing results (Job ID: ${response.data.job_id})`, 'Already Processed');
                     } else if (response.data.reused) {
-                        alert(`🚀 This audio file was already processed by another user! Created instant copy for you (Job ID: ${response.data.job_id})`);
+                        showSuccessToast(`🚀 This audio file was already processed by another user! Created instant copy for you (Job ID: ${response.data.job_id})`, 'Instant Copy Created');
                     } else {
-                        alert('Audio uploaded successfully! Processing started.');
+                        showSuccessToast('Audio uploaded successfully! Processing started.', 'Upload Complete');
                     }
                     document.getElementById('audio-summary-prompt').value = '';
                     setTimeout(refreshJobs, 1000);
                 }
             } catch (error) {
-                alert('Upload failed: ' + (error.response?.data?.detail || error.message));
+                showErrorToast('Upload failed: ' + (error.response?.data?.detail || error.message), 'Upload Failed');
             } finally {
                 audioProgressDiv.classList.add('hidden');
                 audioProgressBar.style.width = '0%';
@@ -739,7 +937,7 @@
             const submitBtn = document.getElementById('youtube-submit-btn');
 
             if (!youtubeInput) {
-                alert('Please enter a YouTube URL or video ID');
+                showWarningToast('Please enter a YouTube URL or video ID', 'Missing Input');
                 return;
             }
 
@@ -748,7 +946,7 @@
             const videoIdRegex = /^[a-zA-Z0-9_-]{11}$/;
             
             if (!youtubeRegex.test(youtubeInput) && !videoIdRegex.test(youtubeInput)) {
-                alert('Please enter a valid YouTube URL or 11-character video ID');
+                showErrorToast('Please enter a valid YouTube URL or 11-character video ID', 'Invalid Format');
                 return;
             }
 
@@ -775,18 +973,18 @@
 
                 if (response.data.job_id) {
                     if (response.data.duplicate) {
-                        alert(`This YouTube video has already been processed! Showing existing results (Job ID: ${response.data.job_id})`);
+                        showInfoToast(`This YouTube video has already been processed! Showing existing results (Job ID: ${response.data.job_id})`, 'Already Processed');
                     } else if (response.data.reused) {
-                        alert(`🚀 This YouTube video was already processed by another user! Created instant copy for you (Job ID: ${response.data.job_id})`);
+                        showSuccessToast(`🚀 This YouTube video was already processed by another user! Created instant copy for you (Job ID: ${response.data.job_id})`, 'Instant Copy Created');
                     } else {
-                        alert('YouTube video processing started! This may take several minutes.');
+                        showInfoToast('YouTube video processing started! This may take several minutes.', 'Processing Started');
                     }
                     document.getElementById('youtube-url').value = '';
                     document.getElementById('youtube-summary-prompt').value = '';
                     setTimeout(refreshJobs, 1000);
                 }
             } catch (error) {
-                alert('YouTube processing failed: ' + (error.response?.data?.detail || error.message));
+                showErrorToast('YouTube processing failed: ' + (error.response?.data?.detail || error.message), 'Processing Failed');
             } finally {
                 youtubeProgress.classList.add('hidden');
                 submitBtn.disabled = false;
@@ -828,10 +1026,10 @@
                         'Authorization': `Bearer {{ user.email }}`
                     }
                 });
-                alert('Job deleted successfully');
+                showSuccessToast('Job deleted successfully', 'Job Deleted');
                 refreshJobs();
             } catch (error) {
-                alert('Failed to delete job: ' + (error.response?.data?.detail || error.message));
+                showErrorToast('Failed to delete job: ' + (error.response?.data?.detail || error.message), 'Deletion Failed');
             }
         }
 
@@ -1107,6 +1305,100 @@
                 refreshJobs();
             }
         }, 30000);
+
+        // Edit Prompt Modal Functions
+        function showEditPromptModal(button) {
+            const jobId = button.getAttribute('data-job-id');
+            const currentPrompt = button.getAttribute('data-current-prompt');
+            
+            document.getElementById('edit-job-id').value = jobId;
+            document.getElementById('edit-prompt-text').value = currentPrompt;
+            document.getElementById('edit-prompt-modal').classList.remove('hidden');
+        }
+
+        function closeEditPromptModal() {
+            document.getElementById('edit-prompt-modal').classList.add('hidden');
+        }
+
+        async function saveEditedPrompt() {
+            const jobId = document.getElementById('edit-job-id').value;
+            const newPrompt = document.getElementById('edit-prompt-text').value;
+            const saveButton = document.querySelector('#edit-prompt-modal button[onclick="saveEditedPrompt()"]');
+            const originalText = saveButton.innerHTML;
+            
+            // Show loading state
+            saveButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Regenerating...';
+            saveButton.disabled = true;
+            
+            try {
+                const response = await axios.post('/api/regenerate-summary/', {
+                    job_id: jobId,
+                    summary_prompt: newPrompt
+                });
+                
+                if (response.data.success) {
+                    closeEditPromptModal();
+                    refreshJobs(); // Refresh to show the new summary
+                    showSuccessToast('Summary regenerated successfully!', 'Summary Updated');
+                } else {
+                    showErrorToast('Error: ' + response.data.message, 'Update Failed');
+                }
+            } catch (error) {
+                showErrorToast('Error regenerating summary: ' + error.response?.data?.detail || error.message, 'Update Failed');
+            } finally {
+                // Restore button state
+                saveButton.innerHTML = originalText;
+                saveButton.disabled = false;
+            }
+        }
+
+        // Close modal when clicking outside
+        document.addEventListener('click', (e) => {
+            const modal = document.getElementById('edit-prompt-modal');
+            if (e.target === modal) {
+                closeEditPromptModal();
+            }
+        });
     </script>
+
+    <!-- Edit Prompt Modal -->
+    <div id="edit-prompt-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 w-full max-w-2xl mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-gray-800">
+                    <i class="fas fa-edit mr-2 text-purple-600"></i>Edit Summary Prompt
+                </h3>
+                <button onclick="closeEditPromptModal()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="mb-4">
+                <label for="edit-prompt-text" class="block text-sm font-medium text-gray-700 mb-2">
+                    <i class="fas fa-brain mr-1 text-purple-600"></i>Summary Prompt
+                </label>
+                <textarea id="edit-prompt-text" 
+                          placeholder="Enter a new prompt to regenerate the summary. For example: 'Focus on the technical details and implementation steps.' Leave blank for default summary."
+                          rows="4"
+                          class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical"></textarea>
+                <p class="text-xs text-gray-500 mt-1">
+                    <i class="fas fa-lightbulb mr-1"></i>The summary will be regenerated with your new prompt using the existing transcript.
+                </p>
+            </div>
+            
+            <div class="flex justify-end space-x-3">
+                <button onclick="closeEditPromptModal()" 
+                        class="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors">
+                    Cancel
+                </button>
+                <button onclick="saveEditedPrompt()" 
+                        class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors">
+                    <i class="fas fa-magic mr-2"></i>Regenerate Summary
+                </button>
+            </div>
+            
+            <input type="hidden" id="edit-job-id" value="">
+        </div>
+    </div>
 </body>
 </html>

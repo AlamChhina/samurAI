@@ -1801,7 +1801,6 @@ async def generate_summary(text: str, custom_prompt: Optional[str] = None) -> Op
 
 @app.post("/api/regenerate-summary/")
 async def regenerate_summary(
-    background_tasks: BackgroundTasks,
     request: SummaryRequest,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -1821,43 +1820,39 @@ async def regenerate_summary(
     if not job.transcription:
         raise HTTPException(status_code=400, detail="No transcription available for this job")
     
-    # Generate new summary in background
-    async def regenerate_summary_background():
-        try:
-            print(f"🔄 Regenerating summary for job {job.id} with custom prompt...")
+    try:
+        print(f"🔄 Regenerating summary for job {job.id} with custom prompt...")
+        
+        # Generate new summary
+        new_summary = await generate_summary(job.transcription, request.summary_prompt)
+        
+        if new_summary:
+            # Save new summary
+            safe_filename = re.sub(r'[^\w\s-]', '', job.filename).strip()[:50]
+            summary_filename = f"{safe_filename}_{job.id}_summary.txt"
+            summary_path = SUMMARIES_DIR / summary_filename
             
-            # Generate new summary
-            new_summary = await generate_summary(job.transcription, request.summary_prompt)
+            async with aiofiles.open(summary_path, 'w') as f:
+                await f.write(new_summary)
             
-            if new_summary:
-                # Save new summary
-                safe_filename = re.sub(r'[^\w\s-]', '', job.filename).strip()[:50]
-                summary_filename = f"{safe_filename}_{job.id}_summary_custom.txt"
-                summary_path = SUMMARIES_DIR / summary_filename
-                
-                async with aiofiles.open(summary_path, 'w') as f:
-                    await f.write(new_summary)
-                
-                # Generate speech for new summary
-                summary_speech_filename = f"{safe_filename}_{job.id}_summary_custom_speech.mp3"
-                summary_speech_path = SPEECH_DIR / summary_speech_filename
-                speech_success = await text_to_speech(new_summary, str(summary_speech_path))
-                
-                # Update job with new summary
-                job.summary = new_summary
-                job.summary_file = summary_filename
-                job.summary_speech_file = summary_speech_filename if speech_success else None
-                job.summary_prompt = request.summary_prompt
-                db.commit()
-                
-                print(f"✅ Summary regenerated successfully for job {job.id}")
-            else:
-                print(f"❌ Failed to regenerate summary for job {job.id}")
-                
-        except Exception as e:
-            print(f"❌ Error regenerating summary: {e}")
-    
-    # Start regeneration in background
-    background_tasks.add_task(regenerate_summary_background)
-    
-    return {"message": "Summary regeneration started", "job_id": job.id}
+            # Generate speech for new summary
+            summary_speech_filename = f"{safe_filename}_{job.id}_summary_speech.mp3"
+            summary_speech_path = SPEECH_DIR / summary_speech_filename
+            speech_success = await text_to_speech(new_summary, str(summary_speech_path))
+            
+            # Update job with new summary
+            job.summary = new_summary
+            job.summary_file = summary_filename
+            job.summary_speech_file = summary_speech_filename if speech_success else None
+            job.summary_prompt = request.summary_prompt
+            db.commit()
+            
+            print(f"✅ Summary regenerated successfully for job {job.id}")
+            return {"success": True, "message": "Summary regenerated successfully", "job_id": job.id}
+        else:
+            print(f"❌ Failed to regenerate summary for job {job.id}")
+            return {"success": False, "message": "Failed to generate summary with the provided prompt"}
+            
+    except Exception as e:
+        print(f"❌ Error regenerating summary: {e}")
+        return {"success": False, "message": f"Error regenerating summary: {str(e)}"}
