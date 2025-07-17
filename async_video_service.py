@@ -24,6 +24,8 @@ import httpx
 import jwt
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from bs4 import BeautifulSoup
+import requests
 import yt_dlp
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -169,6 +171,10 @@ class YouTubeRequest(BaseModel):
     summary_prompt: Optional[str] = None
 
 class VideoUploadRequest(BaseModel):
+    summary_prompt: Optional[str] = None
+
+class TranscriptRequest(BaseModel):
+    url: str
     summary_prompt: Optional[str] = None
 
 class SummaryRequest(BaseModel):
@@ -1002,6 +1008,95 @@ async def process_audio_background(job_id: str, audio_path: str, filename: str, 
         # Clean up original audio file
         if os.path.exists(audio_path):
             os.remove(audio_path)
+        # Close database session
+        db.close()
+
+async def process_transcript_background(job_id: str, transcript_text: str, filename: str, summary_prompt: Optional[str] = None):
+    """Background task for processing transcript text directly"""
+    from database import SessionLocal
+    
+    # Create a fresh database session for this background task
+    db = SessionLocal()
+    
+    try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        
+        if not job:
+            print(f"❌ Job {job_id} not found")
+            return
+        
+        print(f"📝 Processing transcript: {filename}")
+        job.status = "processing"
+        db.commit()
+        
+        # Save transcript to file
+        transcript_filename = f"{uuid.uuid4().hex}_transcript.txt"
+        transcript_path = TRANSCRIPTS_DIR / transcript_filename
+        
+        with open(transcript_path, 'w', encoding='utf-8') as f:
+            f.write(transcript_text)
+        
+        # Generate summary
+        summary = None
+        summary_filename = None
+        if MLX_AVAILABLE:
+            print("🧠 Generating summary using MLX...")
+            summary = _create_mlx_summary(transcript_text, summary_prompt)
+        else:
+            print("🧠 Generating extractive summary...")
+            summary = _create_extractive_summary(transcript_text, summary_prompt)
+        
+        if summary:
+            # Save summary
+            summary_filename = f"{uuid.uuid4().hex}_summary.md"
+            summary_path = SUMMARIES_DIR / summary_filename
+            
+            with open(summary_path, 'w', encoding='utf-8') as f:
+                f.write(summary)
+        
+        # Generate TTS for transcript
+        print("🎵 Generating speech for transcript...")
+        speech_filename = f"{uuid.uuid4().hex}_speech.mp3"
+        speech_path = SPEECH_DIR / speech_filename
+        speech_success = await text_to_speech(transcript_text, str(speech_path))
+        
+        if not speech_success:
+            print("⚠️ Failed to generate transcript speech, but continuing...")
+            speech_filename = None
+        
+        # Generate TTS for summary if available
+        summary_speech_filename = None
+        if summary:
+            print("🎵 Generating speech for summary...")
+            summary_speech_filename = f"{uuid.uuid4().hex}_summary_speech.mp3"
+            summary_speech_path = SPEECH_DIR / summary_speech_filename
+            summary_speech_success = await text_to_speech(summary, str(summary_speech_path))
+            
+            if not summary_speech_success:
+                print("⚠️ Failed to generate summary speech, but continuing...")
+                summary_speech_filename = None
+        
+        # Update job with results
+        job.status = "completed"
+        job.transcription = transcript_text
+        job.transcript_file = transcript_filename
+        job.speech_file = speech_filename
+        job.summary = summary
+        job.summary_file = summary_filename
+        job.summary_speech_file = summary_speech_filename
+        job.summary_prompt = summary_prompt
+        job.completed_at = datetime.now(timezone.utc)
+        db.commit()
+        
+        print(f"✅ Transcript processing completed: {filename}")
+        
+    except Exception as e:
+        print(f"❌ Error processing transcript {filename}: {e}")
+        job.status = "failed"
+        job.error_message = str(e)
+        db.commit()
+    
+    finally:
         # Close database session
         db.close()
 
@@ -1871,6 +1966,250 @@ async def delete_job(job_id: str, user: User = Depends(get_current_user), db: Se
     db.commit()
     
     return {"message": "Job deleted successfully"}
+
+@app.post("/api/process-transcript-url/")
+async def process_transcript_url(
+    background_tasks: BackgroundTasks,
+    request: TranscriptRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Process transcript from URL (e.g., NPR transcripts)"""
+    if not user:
+        raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    try:
+        # Fetch the webpage content
+        async with httpx.AsyncClient() as client:
+            response = await client.get(request.url, timeout=30.0)
+            response.raise_for_status()
+        
+        # Parse the content with BeautifulSoup
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extract transcript text (adapted for NPR and common transcript formats)
+        transcript_text = ""
+        
+        # Strategy 1: Look for NPR transcript content
+        npr_transcript = soup.find('div', class_='transcript')
+        if npr_transcript:
+            transcript_text = npr_transcript.get_text(strip=True)
+        else:
+            # Strategy 2: Look for common transcript selectors
+            selectors = [
+                '.transcript-content',
+                '.transcript-text', 
+                '.article-body',
+                '.story-text',
+                'article',
+                '.content'
+            ]
+            
+            for selector in selectors:
+                element = soup.select_one(selector)
+                if element:
+                    transcript_text = element.get_text(strip=True)
+                    break
+        
+        # Strategy 3: Fallback to main content
+        if not transcript_text:
+            # Remove navigation, ads, etc.
+            for unwanted in soup(['nav', 'header', 'footer', 'aside', 'script', 'style']):
+                unwanted.decompose()
+            
+            # Get main content
+            main_content = soup.find('main') or soup.find('article') or soup.find('body')
+            if main_content:
+                transcript_text = main_content.get_text(strip=True)
+        
+        if not transcript_text or len(transcript_text) < 50:
+            raise HTTPException(status_code=400, detail="Could not extract transcript content from URL")
+        
+        # Generate content hash for duplicate detection
+        content_identifier = f"transcript_url:{request.url}:{request.summary_prompt or 'default'}"
+        content_hash = generate_content_hash(content_identifier)
+        media_hash = generate_media_hash(f"transcript_url:{request.url}")
+        
+        # Check for existing job by this user with same prompt first
+        existing_job = db.query(Job).filter(
+            Job.user_id == user.id,
+            Job.content_hash == content_hash
+        ).first()
+        
+        if existing_job:
+            return {
+                "job_id": existing_job.id,
+                "status": existing_job.status,
+                "message": "This transcript URL with the same prompt has already been processed",
+                "duplicate": True
+            }
+        
+        # Check for existing job by any user (for reuse)
+        existing_media_job = db.query(Job).filter(
+            Job.media_hash == media_hash,
+            Job.summary_prompt == (request.summary_prompt or None)
+        ).first()
+        
+        if existing_media_job and existing_media_job.status == "completed":
+            # Create new job from existing content
+            job = create_job_from_existing_content(
+                db, user.id, existing_media_job, 
+                f"transcript_from_url_{uuid.uuid4().hex[:8]}.txt",
+                request.summary_prompt
+            )
+            return {
+                "job_id": job.id,
+                "status": "completed",
+                "message": "Transcript already processed - created instant copy",
+                "reused": True
+            }
+        
+        # Create new job
+        job_id = str(uuid.uuid4())
+        job = Job(
+            id=job_id,
+            user_id=user.id,
+            filename=f"transcript_from_url_{job_id[:8]}.txt",
+            status="pending",
+            content_hash=content_hash,
+            media_hash=media_hash,
+            summary_prompt=request.summary_prompt
+        )
+        db.add(job)
+        db.commit()
+        
+        # Start background processing with the extracted transcript
+        background_tasks.add_task(
+            process_transcript_background, 
+            job.id, 
+            transcript_text, 
+            job.filename, 
+            request.summary_prompt
+        )
+        
+        return {"job_id": job.id, "status": "pending", "message": "Transcript URL processing started"}
+        
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=400, detail=f"Failed to fetch URL: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to process transcript URL: {str(e)}")
+
+@app.post("/api/process-transcript-file/")
+async def process_transcript_file(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    custom_prompt: Optional[str] = Form(None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Process uploaded transcript file"""
+    if not user:
+        raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    # Validate file type
+    allowed_extensions = ['.txt', '.doc', '.docx', '.pdf']
+    file_extension = os.path.splitext(file.filename)[1].lower()
+    if file_extension not in allowed_extensions:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}"
+        )
+    
+    try:
+        # Read file content
+        content = await file.read()
+        
+        # Extract text based on file type
+        if file_extension == '.txt':
+            transcript_text = content.decode('utf-8')
+        elif file_extension == '.pdf':
+            # Would need PyPDF2 or similar - for now, basic text extraction
+            try:
+                import PyPDF2
+                import io
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
+                transcript_text = ""
+                for page in pdf_reader.pages:
+                    transcript_text += page.extract_text() + "\n"
+            except ImportError:
+                raise HTTPException(status_code=400, detail="PDF processing not available. Please convert to .txt file.")
+        elif file_extension in ['.doc', '.docx']:
+            # Would need python-docx - for now, suggest conversion
+            raise HTTPException(status_code=400, detail="Word document processing not available. Please convert to .txt file.")
+        else:
+            transcript_text = content.decode('utf-8')
+        
+        if not transcript_text or len(transcript_text.strip()) < 50:
+            raise HTTPException(status_code=400, detail="Transcript file appears to be empty or too short")
+        
+        # Generate content hash for duplicate detection
+        content_identifier = f"transcript_file:{file.filename}:{hashlib.md5(content).hexdigest()}:{custom_prompt or 'default'}"
+        content_hash = generate_content_hash(content_identifier)
+        media_hash = generate_media_hash(f"transcript_file:{file.filename}:{hashlib.md5(content).hexdigest()}")
+        
+        # Check for existing job by this user with same prompt first
+        existing_job = db.query(Job).filter(
+            Job.user_id == user.id,
+            Job.content_hash == content_hash
+        ).first()
+        
+        if existing_job:
+            return {
+                "job_id": existing_job.id,
+                "status": existing_job.status,
+                "message": "This transcript file with the same prompt has already been processed",
+                "duplicate": True
+            }
+        
+        # Check for existing job by any user (for reuse)
+        existing_media_job = db.query(Job).filter(
+            Job.media_hash == media_hash,
+            Job.summary_prompt == custom_prompt
+        ).first()
+        
+        if existing_media_job and existing_media_job.status == "completed":
+            # Create new job from existing content
+            job = create_job_from_existing_content(
+                db, user.id, existing_media_job, 
+                file.filename,
+                custom_prompt
+            )
+            return {
+                "job_id": job.id,
+                "status": "completed",
+                "message": "Transcript already processed - created instant copy",
+                "reused": True
+            }
+        
+        # Create new job
+        job_id = str(uuid.uuid4())
+        job = Job(
+            id=job_id,
+            user_id=user.id,
+            filename=file.filename,
+            status="pending",
+            content_hash=content_hash,
+            media_hash=media_hash,
+            summary_prompt=custom_prompt
+        )
+        db.add(job)
+        db.commit()
+        
+        # Start background processing
+        background_tasks.add_task(
+            process_transcript_background, 
+            job.id, 
+            transcript_text, 
+            file.filename, 
+            custom_prompt
+        )
+        
+        return {"job_id": job.id, "status": "pending", "message": "Transcript file processing started"}
+        
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File encoding not supported. Please save as UTF-8 text file.")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to process transcript file: {str(e)}")
 
 def load_mlx_model():
     """Load MLX model for text summarization (cached) - Apple Silicon optimized"""
