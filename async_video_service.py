@@ -528,6 +528,9 @@ async def download_video_from_url(url: str) -> Optional[tuple[str, str]]:
                 'embed_subs': False,
                 'writesubtitles': False,
                 'writeautomaticsub': False,
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
             }
             
             print(f"Downloading video from: {url}")
@@ -556,7 +559,21 @@ async def download_video_from_url(url: str) -> Optional[tuple[str, str]]:
         result = await asyncio.to_thread(_download)
         return result
     except Exception as e:
-        print(f"Error downloading video: {str(e)}")
+        error_msg = str(e)
+        print(f"Error downloading video: {error_msg}")
+        
+        # Provide more specific error messages for common issues
+        if "vimeo" in error_msg.lower() and ("oauth" in error_msg.lower() or "400" in error_msg):
+            print("⚠️ Vimeo OAuth authentication issue detected. This may be due to:")
+            print("   - Vimeo's updated authentication requirements")
+            print("   - yt-dlp version compatibility issues")
+            print("   - Video privacy settings")
+            print("💡 Try using a different video platform or contact support.")
+        elif "private" in error_msg.lower() or "permission" in error_msg.lower():
+            print("⚠️ Video appears to be private or restricted.")
+        elif "unavailable" in error_msg.lower():
+            print("⚠️ Video is no longer available.")
+        
         return None, None
 
 async def download_original_audio_from_url(url: str) -> Optional[tuple[str, str]]:
@@ -578,6 +595,9 @@ async def download_original_audio_from_url(url: str) -> Optional[tuple[str, str]
                 'embed_subs': False,
                 'writesubtitles': False,
                 'writeautomaticsub': False,
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
             }
             
             print(f"Downloading original audio from: {url}")
@@ -1394,8 +1414,12 @@ async def process_youtube_background(job_id: str, youtube_url: str, custom_promp
             
             # Download video from supported platform
             download_result = await download_video_from_url(youtube_url)
-            if not download_result:
-                raise RuntimeError("Failed to download video")
+            if not download_result or download_result[0] is None:
+                # Check if it's a Vimeo URL for better error message
+                if 'vimeo.com' in youtube_url.lower():
+                    raise RuntimeError("Failed to download Vimeo video. This may be due to authentication issues, privacy settings, or platform restrictions. Try using a different video platform.")
+                else:
+                    raise RuntimeError("Failed to download video. Please check if the video is publicly accessible and try again.")
             
             video_path, video_title = download_result
             
@@ -1428,7 +1452,7 @@ async def process_youtube_background(job_id: str, youtube_url: str, custom_promp
         if keep_original_audio:
             print("🎵 Extracting original audio...")
             original_audio_result = await download_original_audio_from_url(youtube_url)
-            if original_audio_result:
+            if original_audio_result and original_audio_result[0] is not None:
                 original_audio_path, _ = original_audio_result
                 # Move to permanent location
                 original_audio_filename = f"{safe_title}_{job_id}_original_audio.mp3"
