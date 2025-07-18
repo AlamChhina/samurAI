@@ -2139,6 +2139,9 @@ async def process_video_url(
     # Start background processing for video
     background_tasks.add_task(process_youtube_background, job.id, normalized_url, request.summary_prompt, request.keep_original_audio)
     
+    # Track usage
+    increment_usage(db, user, "video_url_process", job.id)
+    
     return {"job_id": job.id, "status": "pending", "message": f"{platform.title()} video processing started"}
 
 @app.post("/api/process-youtube/")
@@ -2408,6 +2411,9 @@ async def process_transcript_url(
             job.filename, 
             request.summary_prompt
         )
+        
+        # Track usage
+        increment_usage(db, user, "transcript_url_process", job.id)
         
         return {"job_id": job.id, "status": "pending", "message": "Transcript URL processing started"}
         
