@@ -89,6 +89,7 @@ class Job(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey("users.id"))
     filename = Column(String)
+    source_url = Column(String)  # Original URL for jobs created from URLs
     content_hash = Column(String, index=True)  # Hash of the content for duplicate detection
     media_hash = Column(String, index=True)  # Hash of the media content only (excluding summary prompt)
     status = Column(String, default="pending")  # pending, processing, completed, failed

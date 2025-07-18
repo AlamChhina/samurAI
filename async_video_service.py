@@ -454,6 +454,7 @@ def create_job_from_existing_content(db: Session, user_id: str, existing_job: Jo
         id=new_job_id,
         user_id=user_id,
         filename=filename,
+        source_url=existing_job.source_url,  # Copy source URL from existing job
         content_hash=existing_job.content_hash,
         status="completed",
         transcription=existing_job.transcription,
@@ -1748,6 +1749,11 @@ async def dashboard(request: Request, user: User = Depends(get_current_user), db
     jobs = db.query(Job).filter(Job.user_id == user.id).order_by(Job.created_at.desc()).all()
     return templates.TemplateResponse("dashboard.html", {"request": request, "user": user, "jobs": jobs})
 
+@app.get("/test", response_class=HTMLResponse)
+async def test_template(request: Request):
+    """Test template rendering"""
+    return templates.TemplateResponse("test.html", {"request": request})
+
 @app.get("/profile", response_class=HTMLResponse)
 async def profile(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """User profile page"""
@@ -2120,6 +2126,7 @@ async def process_video_url(
     job = Job(
         user_id=user.id,
         filename=f"{platform.title()}: {normalized_url}",
+        source_url=normalized_url,  # Store the original URL
         content_hash=content_hash,
         media_hash=media_hash,
         status="pending",

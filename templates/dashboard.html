@@ -534,7 +534,18 @@
                             <div class="flex justify-between items-start mb-4">
                                 <div class="flex-1 mr-4">
                                     <div class="flex items-center space-x-3 mb-2">
-                                        <h3 class="font-semibold text-gray-800">{{ job.filename }}</h3>
+                                        {% if job.source_url %}
+                                            <!-- Job has a source URL, make it clickable -->
+                                            <h3 class="font-semibold">
+                                                <a href="{{ job.source_url }}" target="_blank" class="text-blue-600 hover:text-blue-800 hover:underline transition-colors">
+                                                    {{ job.filename }}
+                                                    <i class="fas fa-external-link-alt ml-1 text-xs"></i>
+                                                </a>
+                                            </h3>
+                                        {% else %}
+                                            <!-- Job doesn't have a source URL, show as regular text -->
+                                            <h3 class="font-semibold text-gray-800">{{ job.filename }}</h3>
+                                        {% endif %}
                                         <span class="px-2 py-1 rounded-full text-xs font-medium
                                             {% if job.status == 'completed' %}bg-green-100 text-green-800
                                             {% elif job.status == 'processing' %}bg-blue-100 text-blue-800
