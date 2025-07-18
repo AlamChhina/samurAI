@@ -37,6 +37,9 @@ youtube-transcript-api>=0.6.0
 # Microsoft Edge-TTS (high-quality neural voices)
 edge-tts>=7.0.0
 
+# Audio processing and manipulation
+pydub>=0.25.0
+
 # ==========================================
 # AI & Machine Learning
 # ==========================================

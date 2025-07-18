@@ -37,53 +37,17 @@ class User(Base):
     subscriptions = relationship("Subscription", back_populates="user")
     usage_logs = relationship("UsageLog", back_populates="user")
 
-class Job(Base):
-    __tablename__ = "jobs"
-    
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, ForeignKey("users.id"))
-    filename = Column(String)
-    content_hash = Column(String, index=True)
-    status = Column(String, default="pending")
-    transcription = Column(Text)
-    transcript_file = Column(String)
-    speech_file = Column(String)
-    summary = Column(Text)
-    summary_file = Column(String)
-    summary_speech_file = Column(String)
-    summary_prompt = Column(Text)
-    error_message = Column(Text)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    completed_at = Column(DateTime(timezone=True))
-    
-    # Relationship
-    user = relationship("User", back_populates="jobs")
-
-class UserPreferences(Base):
-    __tablename__ = "user_preferences"
-    
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, ForeignKey("users.id"), unique=True)
-    preferred_voice = Column(String, default="en-US-AriaNeural")
-    voice_speed = Column(String, default="1.0")
-    voice_pitch = Column(String, default="0Hz")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
-    # Relationship
-    user = relationship("User", back_populates="preferences")
-
 class Subscription(Base):
     __tablename__ = "subscriptions"
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey("users.id"))
     stripe_subscription_id = Column(String, unique=True)
-    stripe_price_id = Column(String)
-    plan_type = Column(String)
-    amount = Column(Float)
+    stripe_price_id = Column(String)  # monthly or yearly price ID
+    plan_type = Column(String)  # "monthly" or "yearly"
+    amount = Column(Float)  # Amount in USD
     currency = Column(String, default="usd")
-    status = Column(String)
+    status = Column(String)  # active, canceled, past_due, etc.
     current_period_start = Column(DateTime(timezone=True))
     current_period_end = Column(DateTime(timezone=True))
     cancel_at_period_end = Column(Boolean, default=False)
@@ -98,28 +62,72 @@ class UsageLog(Base):
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey("users.id"))
-    action_type = Column(String)
+    action_type = Column(String)  # "video_process", "audio_process", "transcript_process"
     job_id = Column(String, ForeignKey("jobs.id"), nullable=True)
     usage_date = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationship
     user = relationship("User", back_populates="usage_logs")
 
-# Helper functions
+class UserPreferences(Base):
+    __tablename__ = "user_preferences"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id"), unique=True)
+    preferred_voice = Column(String, default="en-US-AriaNeural")  # Edge-TTS voice
+    voice_speed = Column(String, default="1.0")  # Speech speed multiplier
+    voice_pitch = Column(String, default="0Hz")  # Voice pitch adjustment
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationship
+    user = relationship("User", back_populates="preferences")
+
+class Job(Base):
+    __tablename__ = "jobs"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id"))
+    filename = Column(String)
+    content_hash = Column(String, index=True)  # Hash of the content for duplicate detection
+    media_hash = Column(String, index=True)  # Hash of the media content only (excluding summary prompt)
+    status = Column(String, default="pending")  # pending, processing, completed, failed
+    transcription = Column(Text)
+    transcript_file = Column(String)
+    speech_file = Column(String)
+    original_audio_file = Column(String)  # Original audio from video source
+    summary = Column(Text)
+    summary_file = Column(String)
+    summary_speech_file = Column(String)
+    summary_prompt = Column(Text)  # Custom prompt for summary generation
+    error_message = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True))
+    
+    # Relationship
+    user = relationship("User", back_populates="jobs")
+
+# Helper functions for subscription management
 def is_subscription_active(user: User) -> bool:
+    """Check if user has an active subscription"""
     if user.subscription_tier == "free":
         return False
+    
     return (user.subscription_status == "active" and 
             user.subscription_end_date and 
             user.subscription_end_date > datetime.now(timezone.utc))
 
 def can_process_request(user: User) -> tuple[bool, str]:
+    """Check if user can process a request based on their tier and usage"""
+    # Paid users have unlimited access
     if is_subscription_active(user):
         return True, ""
     
+    # Free users have daily limits
     today = datetime.now(timezone.utc).date()
     reset_date = user.daily_usage_reset_date.date() if user.daily_usage_reset_date else today
     
+    # Reset counter if it's a new day
     if reset_date < today:
         user.daily_usage_count = 0
         user.daily_usage_reset_date = datetime.now(timezone.utc)
@@ -130,14 +138,18 @@ def can_process_request(user: User) -> tuple[bool, str]:
     return True, ""
 
 def increment_usage(db, user: User, action_type: str, job_id: str = None):
+    """Increment user usage count and log the action"""
+    # Only count usage for free users
     if not is_subscription_active(user):
         user.daily_usage_count += 1
         
+        # Reset date if needed
         today = datetime.now(timezone.utc).date()
         reset_date = user.daily_usage_reset_date.date() if user.daily_usage_reset_date else today
         if reset_date < today:
             user.daily_usage_reset_date = datetime.now(timezone.utc)
     
+    # Log the usage
     usage_log = UsageLog(
         user_id=user.id,
         action_type=action_type,
@@ -147,10 +159,11 @@ def increment_usage(db, user: User, action_type: str, job_id: str = None):
     db.commit()
 
 def get_content_retention_days(user: User) -> int:
+    """Get the number of days content should be retained for user"""
     if is_subscription_active(user):
-        return 30
+        return 30  # Paid users: 30 days
     else:
-        return 7
+        return 7   # Free users: 7 days
 
 # Create tables
 Base.metadata.create_all(bind=engine)

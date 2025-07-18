@@ -1,3 +1,7 @@
+import os
+# Enable tokenizers parallelism for fast multi-core processing
+os.environ["TOKENIZERS_PARALLELISM"] = "true"
+
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Request, BackgroundTasks, Form
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -179,6 +183,18 @@ else:
     device = torch.device("cpu")
     print("Using CPU")
 
+# Performance optimizations for multi-core processing
+os.environ["OMP_NUM_THREADS"] = str(os.cpu_count())  # Use all CPU cores
+os.environ["MKL_NUM_THREADS"] = str(os.cpu_count())  # Intel MKL optimization
+os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"  # Enable MPS fallback for unsupported ops
+
+# Configure PyTorch for optimal performance
+torch.set_num_threads(os.cpu_count())
+if hasattr(torch, 'set_num_interop_threads'):
+    torch.set_num_interop_threads(os.cpu_count())
+
+print(f"🚀 Performance optimized for {os.cpu_count()} CPU cores")
+
 # Global variables for model caching
 processor = None
 model = None
@@ -194,6 +210,7 @@ class JobResponse(BaseModel):
     transcription: Optional[str] = None
     transcript_file: Optional[str] = None
     speech_file: Optional[str] = None
+    original_audio_file: Optional[str] = None
     summary: Optional[str] = None
     summary_file: Optional[str] = None
     summary_speech_file: Optional[str] = None
@@ -202,13 +219,16 @@ class JobResponse(BaseModel):
 class YouTubeRequest(BaseModel):
     url: str
     summary_prompt: Optional[str] = None
+    keep_original_audio: bool = False
 
 class VideoUploadRequest(BaseModel):
     summary_prompt: Optional[str] = None
+    keep_original_audio: bool = False
 
 class TranscriptRequest(BaseModel):
     url: str
     summary_prompt: Optional[str] = None
+    keep_original_audio: bool = False
 
 class SummaryRequest(BaseModel):
     job_id: str
@@ -538,6 +558,56 @@ async def download_video_from_url(url: str) -> Optional[tuple[str, str]]:
         print(f"Error downloading video: {str(e)}")
         return None, None
 
+async def download_original_audio_from_url(url: str) -> Optional[tuple[str, str]]:
+    """Download original audio from supported platforms using yt-dlp and return the local file path"""
+    try:
+        def _download_audio():
+            # Create temporary filename for audio
+            temp_filename = f"temp_audio_{uuid.uuid4().hex}"
+            
+            # yt-dlp options for best quality audio only
+            ydl_opts = {
+                'format': 'bestaudio[ext=m4a]/bestaudio/best',  # Best audio quality
+                'outtmpl': f'{temp_filename}.%(ext)s',
+                'quiet': False,
+                'no_warnings': False,
+                'extractaudio': True,  # Extract audio only
+                'audioformat': 'mp3',  # Convert to MP3
+                'audioquality': '192',  # High quality MP3
+                'embed_subs': False,
+                'writesubtitles': False,
+                'writeautomaticsub': False,
+            }
+            
+            print(f"Downloading original audio from: {url}")
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # Extract info to get the title
+                info = ydl.extract_info(url, download=False)
+                title = info.get('title', 'Unknown')
+                print(f"Video title: {title}")
+                
+                # Download the audio
+                ydl.download([url])
+                
+                # Find the downloaded audio file
+                import glob
+                downloaded_files = glob.glob(f"{temp_filename}.*")
+                
+                if downloaded_files:
+                    downloaded_file = downloaded_files[0]
+                    print(f"Downloaded original audio: {downloaded_file}")
+                    return downloaded_file, title
+                else:
+                    print("No audio file was downloaded")
+                    return None, None
+        
+        result = await asyncio.to_thread(_download_audio)
+        return result
+    except Exception as e:
+        print(f"Error downloading original audio: {str(e)}")
+        return None, None
+
 async def download_youtube_video(url: str) -> Optional[tuple[str, str]]:
     """Download YouTube video and return the local file path (backward compatibility)"""
     return await download_video_from_url(url)
@@ -601,11 +671,13 @@ async def convert_audio_to_wav(audio_path: str) -> Optional[str]:
         return None
 
 async def transcribe_audio(audio_path: str) -> Optional[str]:
-    """Transcribe audio using Whisper - handles full length audio by chunking"""
+    """Transcribe audio using Whisper - optimized for multi-core processing"""
     try:
         def _transcribe():
             import librosa
             import warnings
+            from concurrent.futures import ThreadPoolExecutor
+            import numpy as np
             
             # Suppress the specific attention mask warning
             warnings.filterwarnings("ignore", message=".*attention_mask.*")
@@ -618,18 +690,20 @@ async def transcribe_audio(audio_path: str) -> Optional[str]:
             audio_duration = len(audio) / 16000
             print(f"Audio duration: {audio_duration:.2f} seconds")
             
-            # Process audio in chunks
+            # Process audio in chunks for better memory management
             chunk_length = 30  # seconds
             chunk_samples = chunk_length * 16000
-            transcriptions = []
             
+            # Prepare all chunks
+            chunks = []
             for i in range(0, len(audio), chunk_samples):
                 chunk = audio[i:i + chunk_samples]
-                chunk_num = i // chunk_samples + 1
-                total_chunks = (len(audio) + chunk_samples - 1) // chunk_samples
-                
-                print(f"Processing chunk {chunk_num}/{total_chunks}")
-                
+                chunks.append(chunk)
+            
+            print(f"Processing {len(chunks)} chunks with optimized batching...")
+            
+            def process_chunk(chunk_data):
+                chunk, chunk_idx = chunk_data
                 # Process chunk with proper attention mask
                 inputs = processor(chunk, sampling_rate=16000, return_tensors="pt")
                 inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
@@ -640,7 +714,7 @@ async def transcribe_audio(audio_path: str) -> Optional[str]:
                     batch_size, _, seq_len = inputs["input_features"].shape
                     inputs["attention_mask"] = torch.ones((batch_size, seq_len), device=device, dtype=torch.long)
                 
-                # Generate transcription with forced parameters
+                # Generate transcription with optimized parameters
                 with torch.no_grad():
                     outputs = model.generate(
                         **inputs, 
@@ -648,17 +722,32 @@ async def transcribe_audio(audio_path: str) -> Optional[str]:
                         language="en",
                         task="transcribe",
                         do_sample=False,  # Use deterministic generation
-                        num_beams=1,      # Use greedy decoding
+                        num_beams=1,      # Use greedy decoding for speed
                         pad_token_id=processor.tokenizer.eos_token_id,
                         eos_token_id=processor.tokenizer.eos_token_id,
                         use_cache=True
                     )
                 
                 chunk_transcription = processor.batch_decode(outputs, skip_special_tokens=True)[0]
-                transcriptions.append(chunk_transcription)
+                print(f"Completed chunk {chunk_idx + 1}/{len(chunks)}")
+                return chunk_transcription
+            
+            # Process chunks with parallel execution when possible
+            transcriptions = []
+            if device.type == "cpu":
+                # Use thread pool for CPU processing
+                with ThreadPoolExecutor(max_workers=min(4, os.cpu_count())) as executor:
+                    chunk_data = [(chunk, i) for i, chunk in enumerate(chunks)]
+                    results = list(executor.map(process_chunk, chunk_data))
+                    transcriptions = results
+            else:
+                # For GPU, process sequentially to avoid memory issues
+                for i, chunk in enumerate(chunks):
+                    transcription = process_chunk((chunk, i))
+                    transcriptions.append(transcription)
             
             full_transcription = " ".join(transcriptions)
-            print(f"Transcribed {len(transcriptions)} chunks")
+            print(f"✅ Transcribed {len(transcriptions)} chunks with optimized processing")
             return full_transcription
         
         result = await asyncio.to_thread(_transcribe)
@@ -698,17 +787,138 @@ async def generate_edge_tts(text: str, output_path: str, voice: str = None) -> b
         
         # Clean the text
         clean_text = text.strip()
-        if len(clean_text) > 32767:  # Edge-TTS limit
-            clean_text = clean_text[:32767]
-            print(f"⚠️ Text truncated to {len(clean_text)} characters for edge-tts")
         
-        print(f"🎤 Using voice: {selected_voice}")
-        communicate = edge_tts.Communicate(clean_text, selected_voice)
-        await communicate.save(output_path)
+        # For longer text, split into chunks and concatenate audio
+        max_chunk_size = 30000  # Conservative chunk size for edge-tts
+        
+        if len(clean_text) <= max_chunk_size:
+            # Single chunk - process normally
+            print(f"🎤 Using voice: {selected_voice} (single chunk: {len(clean_text)} chars)")
+            communicate = edge_tts.Communicate(clean_text, selected_voice)
+            await communicate.save(output_path)
+        else:
+            # Multiple chunks - split and concatenate
+            print(f"🎤 Processing long text ({len(clean_text)} chars) in chunks using voice: {selected_voice}")
+            
+            # Split text into chunks at sentence boundaries
+            chunks = []
+            current_chunk = ""
+            sentences = re.split(r'(?<=[.!?])\s+', clean_text)
+            
+            for sentence in sentences:
+                if len(current_chunk) + len(sentence) + 1 <= max_chunk_size:
+                    current_chunk += sentence + " "
+                else:
+                    if current_chunk.strip():
+                        chunks.append(current_chunk.strip())
+                    current_chunk = sentence + " "
+            
+            if current_chunk.strip():
+                chunks.append(current_chunk.strip())
+            
+            print(f"📝 Split into {len(chunks)} chunks")
+            
+            # Generate audio for each chunk
+            chunk_files = []
+            for i, chunk in enumerate(chunks):
+                # Use absolute path for chunk files to avoid path issues
+                chunk_path = str(Path(output_path).parent / f"chunk_{i}_{Path(output_path).stem}.mp3")
+                communicate = edge_tts.Communicate(chunk, selected_voice)
+                await communicate.save(chunk_path)
+                chunk_files.append(chunk_path)
+                print(f"✅ Generated chunk {i+1}/{len(chunks)}")
+            
+            # Concatenate all chunks using ffmpeg
+            try:
+                # Create a temporary file list for ffmpeg with absolute paths
+                file_list_path = str(Path(output_path).parent / f"filelist_{Path(output_path).stem}.txt")
+                
+                # Write file list asynchronously
+                async with aiofiles.open(file_list_path, 'w') as f:
+                    for chunk_file in chunk_files:
+                        # Use absolute path and escape single quotes
+                        abs_path = os.path.abspath(chunk_file)
+                        await f.write(f"file '{abs_path}'\n")
+                
+                # Use ffmpeg to concatenate with absolute paths
+                def _run_ffmpeg():
+                    return subprocess.run([
+                        'ffmpeg', '-f', 'concat', '-safe', '0', '-i', file_list_path, 
+                        '-c', 'copy', os.path.abspath(output_path), '-y'
+                    ], capture_output=True, text=True, cwd=os.path.dirname(output_path))
+                
+                result = await asyncio.to_thread(_run_ffmpeg)
+                
+                if result.returncode != 0:
+                    print(f"❌ ffmpeg concatenation failed: {result.stderr}")
+                    print(f"📁 Working directory: {os.path.dirname(output_path)}")
+                    print(f"📄 File list path: {file_list_path}")
+                    print(f"🎯 Output path: {output_path}")
+                    print(f"📂 Chunk files: {chunk_files}")
+                    # Fallback: try pydub if available, otherwise use first chunk
+                    try:
+                        from pydub import AudioSegment
+                        print("🔄 Trying pydub concatenation...")
+                        combined = AudioSegment.empty()
+                        for chunk_file in chunk_files:
+                            if os.path.exists(chunk_file):
+                                chunk_audio = AudioSegment.from_mp3(chunk_file)
+                                combined += chunk_audio
+                            else:
+                                print(f"⚠️ Chunk file missing: {chunk_file}")
+                        combined.export(output_path, format="mp3")
+                        print("✅ Used pydub for audio concatenation")
+                    except ImportError:
+                        print("⚠️ pydub not available, using first chunk only")
+                        # Keep the first chunk as fallback
+                        if chunk_files and os.path.exists(chunk_files[0]):
+                            import shutil
+                            shutil.move(chunk_files[0], output_path)
+                            print("⚠️ Using first chunk only as fallback")
+                        else:
+                            return False
+                    except Exception as pydub_error:
+                        print(f"❌ pydub concatenation failed: {pydub_error}")
+                        # Keep the first chunk as fallback
+                        if chunk_files and os.path.exists(chunk_files[0]):
+                            import shutil
+                            shutil.move(chunk_files[0], output_path)
+                            print("⚠️ Using first chunk only as fallback")
+                        else:
+                            return False
+                else:
+                    print("✅ Used ffmpeg for audio concatenation")
+                
+                # Clean up temporary files
+                for chunk_file in chunk_files:
+                    if os.path.exists(chunk_file):
+                        os.remove(chunk_file)
+                if os.path.exists(file_list_path):
+                    os.remove(file_list_path)
+                    
+            except Exception as concat_error:
+                print(f"❌ Audio concatenation failed: {concat_error}")
+                # Keep the first chunk as fallback
+                if chunk_files and os.path.exists(chunk_files[0]):
+                    import shutil
+                    shutil.move(chunk_files[0], output_path)
+                    print("⚠️ Using first chunk only as fallback")
+                    # Clean up remaining files
+                    for chunk_file in chunk_files[1:]:
+                        if os.path.exists(chunk_file):
+                            os.remove(chunk_file)
+                else:
+                    print("❌ No valid chunk files available")
+                    return False
+                
+                # Clean up file list
+                if os.path.exists(file_list_path):
+                    os.remove(file_list_path)
         
         # Verify file was created and has content
         if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-            print(f"✅ High-quality speech generated using edge-tts: {output_path}")
+            file_size = os.path.getsize(output_path)
+            print(f"✅ High-quality speech generated using edge-tts: {output_path} ({file_size} bytes)")
             return True
         else:
             print("❌ Edge-TTS generated empty file")
@@ -1144,7 +1354,7 @@ async def process_transcript_background(job_id: str, transcript_text: str, filen
         # Close database session
         db.close()
 
-async def process_youtube_background(job_id: str, youtube_url: str, custom_prompt: Optional[str] = None):
+async def process_youtube_background(job_id: str, youtube_url: str, custom_prompt: Optional[str] = None, keep_original_audio: bool = False):
     """Background task to process YouTube video"""
     from database import SessionLocal
     
@@ -1158,6 +1368,7 @@ async def process_youtube_background(job_id: str, youtube_url: str, custom_promp
         
         video_path = None
         audio_path = None
+        original_audio_path = None
 
         # Update status to processing
         job.status = "processing"
@@ -1211,6 +1422,22 @@ async def process_youtube_background(job_id: str, youtube_url: str, custom_promp
         async with aiofiles.open(transcript_path, 'w') as f:
             await f.write(transcription)
         
+        # Handle original audio extraction if requested
+        original_audio_filename = None
+        if keep_original_audio:
+            print("🎵 Extracting original audio...")
+            original_audio_result = await download_original_audio_from_url(youtube_url)
+            if original_audio_result:
+                original_audio_path, _ = original_audio_result
+                # Move to permanent location
+                original_audio_filename = f"{safe_title}_{job_id}_original_audio.mp3"
+                original_audio_final_path = SPEECH_DIR / original_audio_filename
+                import shutil
+                shutil.move(original_audio_path, str(original_audio_final_path))
+                print(f"✅ Original audio saved: {original_audio_filename}")
+            else:
+                print("⚠️ Failed to extract original audio, continuing without it...")
+        
         # Generate summary using MLX
         print("🧠 Generating summary using MLX...")
         summary = await generate_summary(transcription, custom_prompt)
@@ -1250,6 +1477,7 @@ async def process_youtube_background(job_id: str, youtube_url: str, custom_promp
         job.transcription = transcription
         job.transcript_file = transcript_filename
         job.speech_file = speech_filename
+        job.original_audio_file = original_audio_filename
         job.summary = summary
         job.summary_file = summary_filename
         job.summary_speech_file = summary_speech_filename
@@ -1902,7 +2130,7 @@ async def process_video_url(
     db.refresh(job)
     
     # Start background processing for video
-    background_tasks.add_task(process_youtube_background, job.id, normalized_url, request.summary_prompt)
+    background_tasks.add_task(process_youtube_background, job.id, normalized_url, request.summary_prompt, request.keep_original_audio)
     
     return {"job_id": job.id, "status": "pending", "message": f"{platform.title()} video processing started"}
 
@@ -1961,6 +2189,18 @@ async def download_speech(filename: str, user: User = Depends(get_current_user),
     
     return FileResponse(file_path, filename=filename)
 
+@app.get("/download/original-audio/{filename}")
+async def download_original_audio(filename: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Download original audio file"""
+    if not user:
+        raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    file_path = SPEECH_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=FILE_NOT_FOUND_MSG)
+    
+    return FileResponse(file_path, filename=filename)
+
 @app.get("/download/summary/{filename}")
 async def download_summary(filename: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Download summary file"""
@@ -2005,6 +2245,11 @@ async def delete_job(job_id: str, user: User = Depends(get_current_user), db: Se
         speech_path = SPEECH_DIR / job.speech_file
         if speech_path.exists():
             speech_path.unlink()
+    
+    if job.original_audio_file:
+        original_audio_path = SPEECH_DIR / job.original_audio_file
+        if original_audio_path.exists():
+            original_audio_path.unlink()
     
     if job.summary_file:
         summary_path = SUMMARIES_DIR / job.summary_file

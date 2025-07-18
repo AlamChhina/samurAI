@@ -289,6 +289,18 @@
                         </p>
                     </div>
                     
+                    <div>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="video-url-keep-original-audio" class="mr-2 text-green-600 focus:ring-green-500 focus:ring-2">
+                            <span class="text-sm font-medium text-gray-700">
+                                <i class="fas fa-music mr-1 text-green-600"></i>Keep Original Audio
+                            </span>
+                        </label>
+                        <p class="text-xs text-gray-500 mt-1 ml-6">
+                            <i class="fas fa-info-circle mr-1"></i>Extract and keep the original audio from the video as an alternative to generated speech
+                        </p>
+                    </div>
+                    
                     <div id="video-url-progress" class="hidden">
                         <div class="bg-red-50 rounded-lg p-4">
                             <div class="flex items-center justify-between mb-2">
@@ -330,6 +342,18 @@
                                   class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical"></textarea>
                         <p class="text-xs text-gray-500 mt-1">
                             <i class="fas fa-lightbulb mr-1"></i>Tip: Be specific about what aspects you want the summary to focus on
+                        </p>
+                    </div>
+                    
+                    <div>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="video-upload-keep-original-audio" class="mr-2 text-green-600 focus:ring-green-500 focus:ring-2">
+                            <span class="text-sm font-medium text-gray-700">
+                                <i class="fas fa-music mr-1 text-green-600"></i>Keep Original Audio
+                            </span>
+                        </label>
+                        <p class="text-xs text-gray-500 mt-1 ml-6">
+                            <i class="fas fa-info-circle mr-1"></i>Extract and keep the original audio from the video as an alternative to generated speech
                         </p>
                     </div>
                 </div>
@@ -630,6 +654,18 @@
                                                     <i class="fas fa-chevron-down"></i>
                                                 </button>
                                             </div>
+                                            {% elif job.original_audio_file %}
+                                            <div class="flex">
+                                                <button onclick="performDefaultAction('{{ job.id }}', '{{ job.original_audio_file }}', 'Original Audio')" 
+                                                        id="default-btn-{{ job.id }}"
+                                                        class="bg-green-600 text-white px-3 py-2 rounded-l text-sm hover:bg-green-700 transition-colors flex items-center">
+                                                    <i class="fas fa-play mr-1"></i><span id="btn-text-{{ job.id }}">Original</span>
+                                                </button>
+                                                <button onclick="toggleJobActions('{{ job.id }}')" 
+                                                        class="bg-green-600 text-white px-2 py-2 rounded-r text-sm hover:bg-green-700 transition-colors border-l border-green-500">
+                                                    <i class="fas fa-chevron-down"></i>
+                                                </button>
+                                            </div>
                                             {% else %}
                                             <button onclick="toggleJobActions('{{ job.id }}')" 
                                                     id="default-btn-{{ job.id }}"
@@ -679,6 +715,18 @@
                                                        onclick="setDefaultAction('{{ job.id }}', 'download', '/download/summary-speech/{{ job.summary_speech_file }}', 'Summary Audio', 'fas fa-download', 'bg-indigo-500'); toggleJobActions('{{ job.id }}')"
                                                        class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                                         <i class="fas fa-download mr-3 text-indigo-500"></i>Download Summary Audio
+                                                    </a>
+                                                    {% endif %}
+                                                    
+                                                    {% if job.original_audio_file %}
+                                                    <button onclick="playInlineAudio('{{ job.id }}', '{{ job.original_audio_file }}', 'Original Audio'); setTimeout(() => setDefaultAction('{{ job.id }}', 'play', '{{ job.original_audio_file }}', 'Original Audio', 'fas fa-play', 'bg-green-600'), 100); toggleJobActions('{{ job.id }}')" 
+                                                            class="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 text-left">
+                                                        <i class="fas fa-play mr-3 text-green-600"></i>Play Original Audio
+                                                    </button>
+                                                    <a href="/download/original-audio/{{ job.original_audio_file }}" 
+                                                       onclick="setDefaultAction('{{ job.id }}', 'download', '/download/original-audio/{{ job.original_audio_file }}', 'Original Audio', 'fas fa-download', 'bg-green-500'); toggleJobActions('{{ job.id }}')"
+                                                       class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                                        <i class="fas fa-download mr-3 text-green-500"></i>Download Original Audio
                                                     </a>
                                                     {% endif %}
                                                     
@@ -935,8 +983,10 @@
 
         async function handleVideoUpload(file) {
             const summaryPrompt = document.getElementById('video-summary-prompt').value.trim();
+            const keepOriginalAudio = document.getElementById('video-upload-keep-original-audio').checked;
             const formData = new FormData();
             formData.append('file', file);
+            formData.append('keep_original_audio', keepOriginalAudio);
             
             // Only include custom prompt if provided
             if (summaryPrompt) {
@@ -967,6 +1017,7 @@
                         showSuccessToast('Video uploaded successfully! Processing started.', 'Upload Complete');
                     }
                     document.getElementById('video-summary-prompt').value = '';
+                    document.getElementById('video-upload-keep-original-audio').checked = false;
                     setTimeout(refreshJobs, 1000);
                 }
             } catch (error) {
@@ -1188,6 +1239,7 @@
         async function processVideoURL() {
             const videoInput = document.getElementById('video-url').value.trim();
             const summaryPrompt = document.getElementById('video-url-summary-prompt').value.trim();
+            const keepOriginalAudio = document.getElementById('video-url-keep-original-audio').checked;
             const videoProgress = document.getElementById('video-url-progress');
             const submitBtn = document.getElementById('video-submit-btn');
 
@@ -1211,7 +1263,8 @@
 
             try {
                 const requestData = {
-                    url: videoInput
+                    url: videoInput,
+                    keep_original_audio: keepOriginalAudio
                 };
                 
                 // Only include custom prompt if provided
@@ -1236,6 +1289,7 @@
                     }
                     document.getElementById('video-url').value = '';
                     document.getElementById('video-url-summary-prompt').value = '';
+                    document.getElementById('video-url-keep-original-audio').checked = false;
                     setTimeout(refreshJobs, 1000);
                 }
             } catch (error) {
