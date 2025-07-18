@@ -101,6 +101,208 @@
                 </div>
             </div>
         </div>
+
+        <!-- Pricing Section -->
+        <div class="mt-16 max-w-6xl mx-auto">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">Choose Your Plan</h2>
+                <p class="text-xl text-gray-600">Get started for free or unlock unlimited processing</p>
+            </div>
+            
+            <div class="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+                <!-- Free Tier -->
+                <div class="bg-white rounded-lg p-8 shadow-lg border-2 border-gray-200">
+                    <div class="text-center">
+                        <div class="bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                            <i class="fas fa-gift text-2xl text-gray-600"></i>
+                        </div>
+                        <h3 class="text-2xl font-bold text-gray-800 mb-2">Free</h3>
+                        <div class="text-4xl font-bold text-gray-800 mb-4">$0<span class="text-lg font-normal text-gray-600">/month</span></div>
+                        <p class="text-gray-600 mb-6">Perfect for trying out the service</p>
+                        
+                        <ul class="text-left space-y-3 mb-8">
+                            <li class="flex items-center">
+                                <i class="fas fa-check text-green-600 mr-3"></i>
+                                <span>5 requests per day</span>
+                            </li>
+                            <li class="flex items-center">
+                                <i class="fas fa-check text-green-600 mr-3"></i>
+                                <span>7 days history</span>
+                            </li>
+                            <li class="flex items-center">
+                                <i class="fas fa-check text-green-600 mr-3"></i>
+                                <span>AI transcription</span>
+                            </li>
+                            <li class="flex items-center">
+                                <i class="fas fa-check text-green-600 mr-3"></i>
+                                <span>Text-to-speech</span>
+                            </li>
+                            <li class="flex items-center">
+                                <i class="fas fa-check text-green-600 mr-3"></i>
+                                <span>AI summaries</span>
+                            </li>
+                        </ul>
+                        
+                        {% if user %}
+                            <a href="/dashboard" class="w-full bg-gray-600 text-white py-3 px-6 rounded-lg hover:bg-gray-700 transition-colors inline-block">
+                                Current Plan
+                            </a>
+                        {% else %}
+                            <a href="/auth/google" class="w-full bg-gray-600 text-white py-3 px-6 rounded-lg hover:bg-gray-700 transition-colors inline-block">
+                                Get Started Free
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <!-- Paid Tier -->
+                <div class="bg-white rounded-lg p-8 shadow-lg border-2 border-blue-500 relative">
+                    <div class="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                        <span class="bg-blue-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
+                            Most Popular
+                        </span>
+                    </div>
+                    
+                    <div class="text-center">
+                        <div class="bg-blue-100 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                            <i class="fas fa-crown text-2xl text-blue-600"></i>
+                        </div>
+                        <h3 class="text-2xl font-bold text-gray-800 mb-2">Pro</h3>
+                        <div class="text-4xl font-bold text-blue-600 mb-1">$10<span class="text-lg font-normal text-gray-600">/month</span></div>
+                        <div class="text-lg text-gray-600 mb-4">or $100/year (save $20)</div>
+                        <p class="text-gray-600 mb-6">For power users and professionals</p>
+                        
+                        <ul class="text-left space-y-3 mb-8">
+                            <li class="flex items-center">
+                                <i class="fas fa-check text-green-600 mr-3"></i>
+                                <span><strong>Unlimited</strong> requests</span>
+                            </li>
+                            <li class="flex items-center">
+                                <i class="fas fa-check text-green-600 mr-3"></i>
+                                <span><strong>30 days</strong> history</span>
+                            </li>
+                            <li class="flex items-center">
+                                <i class="fas fa-check text-green-600 mr-3"></i>
+                                <span>AI transcription</span>
+                            </li>
+                            <li class="flex items-center">
+                                <i class="fas fa-check text-green-600 mr-3"></i>
+                                <span>Text-to-speech</span>
+                            </li>
+                            <li class="flex items-center">
+                                <i class="fas fa-check text-green-600 mr-3"></i>
+                                <span>AI summaries</span>
+                            </li>
+                            <li class="flex items-center">
+                                <i class="fas fa-check text-green-600 mr-3"></i>
+                                <span>Priority processing</span>
+                            </li>
+                            <li class="flex items-center">
+                                <i class="fas fa-check text-green-600 mr-3"></i>
+                                <span>Custom voice options</span>
+                            </li>
+                        </ul>
+                        
+                        {% if user %}
+                            <button onclick="upgradeToPro()" class="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors">
+                                Upgrade to Pro
+                            </button>
+                        {% else %}
+                            <a href="/auth/google" class="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors inline-block">
+                                Start Pro Trial
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- FAQ Section -->
+        <div class="mt-16 max-w-4xl mx-auto">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">Frequently Asked Questions</h2>
+            </div>
+            
+            <div class="bg-white rounded-lg p-8 shadow-lg">
+                <div class="space-y-6">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-2">What video formats do you support?</h3>
+                        <p class="text-gray-600">We support all major video formats including MP4, MOV, AVI, MKV, and more. We also support YouTube URLs and other video platforms.</p>
+                    </div>
+                    
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-2">How accurate is the transcription?</h3>
+                        <p class="text-gray-600">Our AI uses OpenAI's Whisper model, which provides industry-leading accuracy for speech recognition across multiple languages and accents.</p>
+                    </div>
+                    
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-2">Can I cancel my subscription anytime?</h3>
+                        <p class="text-gray-600">Yes, you can cancel your Pro subscription at any time. You'll continue to have Pro access until the end of your billing period.</p>
+                    </div>
+                    
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-2">What happens to my data?</h3>
+                        <p class="text-gray-600">Free users' data is automatically deleted after 7 days. Pro users' data is kept for 30 days. You can download your files anytime before deletion.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
+
+    <!-- Upgrade Modal -->
+    <div id="upgradeModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white rounded-lg p-8 max-w-md w-full mx-4">
+            <div class="text-center">
+                <h3 class="text-2xl font-bold text-gray-800 mb-4">Choose Your Plan</h3>
+                <p class="text-gray-600 mb-6">Select monthly or yearly billing</p>
+                
+                <div class="space-y-4">
+                    <button onclick="createCheckoutSession('monthly')" class="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors">
+                        Monthly - $10/month
+                    </button>
+                    <button onclick="createCheckoutSession('yearly')" class="w-full bg-green-600 text-white py-3 px-6 rounded-lg hover:bg-green-700 transition-colors">
+                        Yearly - $100/year <span class="text-sm">(Save $20)</span>
+                    </button>
+                </div>
+                
+                <button onclick="closeUpgradeModal()" class="mt-4 text-gray-600 hover:text-gray-800">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function upgradeToPro() {
+            document.getElementById('upgradeModal').classList.remove('hidden');
+        }
+        
+        function closeUpgradeModal() {
+            document.getElementById('upgradeModal').classList.add('hidden');
+        }
+        
+        async function createCheckoutSession(planType) {
+            try {
+                const response = await fetch('/api/create-checkout-session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ plan_type: planType })
+                });
+                
+                const data = await response.json();
+                
+                if (data.url) {
+                    window.location.href = data.url;
+                } else {
+                    alert('Error creating checkout session. Please try again.');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error creating checkout session. Please try again.');
+            }
+        }
+    </script>
 </body>
 </html>

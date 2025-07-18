@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscription Success - Video Audio Text Service</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <h1 class="text-xl font-semibold text-gray-900">
+                        <i class="fas fa-video text-red-600 mr-2"></i>Video Audio Text Service
+                    </h1>
+                </div>
+                {% if user %}
+                <div class="flex items-center space-x-4">
+                    <img src="{{ user.picture }}" alt="{{ user.name }}" class="w-8 h-8 rounded-full">
+                    <span class="text-gray-700">{{ user.name }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+        <!-- Success Message -->
+        <div class="text-center">
+            <div class="mx-auto flex items-center justify-center h-20 w-20 rounded-full bg-green-100 mb-6">
+                <i class="fas fa-check text-green-600 text-2xl"></i>
+            </div>
+            
+            <h1 class="text-3xl font-bold text-gray-900 mb-4">
+                🎉 Subscription Activated!
+            </h1>
+            
+            <p class="text-lg text-gray-600 mb-8">
+                Welcome to the paid tier! You now have unlimited access to all features.
+            </p>
+            
+            <!-- Benefits Card -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-8 mb-8 max-w-md mx-auto">
+                <h2 class="text-xl font-semibold text-gray-900 mb-6">Your New Benefits</h2>
+                
+                <div class="space-y-4 text-left">
+                    <div class="flex items-center">
+                        <i class="fas fa-infinity text-green-600 mr-3"></i>
+                        <span class="text-gray-700">Unlimited daily requests</span>
+                    </div>
+                    
+                    <div class="flex items-center">
+                        <i class="fas fa-calendar-alt text-green-600 mr-3"></i>
+                        <span class="text-gray-700">30-day content history</span>
+                    </div>
+                    
+                    <div class="flex items-center">
+                        <i class="fas fa-star text-green-600 mr-3"></i>
+                        <span class="text-gray-700">Priority processing</span>
+                    </div>
+                    
+                    <div class="flex items-center">
+                        <i class="fas fa-headset text-green-600 mr-3"></i>
+                        <span class="text-gray-700">Priority support</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="space-y-4 sm:space-y-0 sm:space-x-4 sm:flex sm:justify-center">
+                <a href="/dashboard" 
+                   class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-red-600 hover:bg-red-700 transition-colors">
+                    <i class="fas fa-tachometer-alt mr-2"></i>
+                    Go to Dashboard
+                </a>
+                
+                <a href="/profile" 
+                   class="inline-flex items-center px-6 py-3 border border-gray-300 text-base font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition-colors">
+                    <i class="fas fa-user mr-2"></i>
+                    View Profile
+                </a>
+            </div>
+            
+            <!-- Session Info -->
+            {% if session_id %}
+            <div class="mt-8 text-sm text-gray-500">
+                Session ID: {{ session_id }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

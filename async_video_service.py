@@ -19,7 +19,17 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from database import get_db, User, Job
 import aiofiles
-from datetime import datetime, timezone
+import asyncio
+import os
+import uuid
+import hashlib
+import shutil
+import glob
+import warnings
+import platform
+import subprocess
+import traceback
+from datetime import datetime, timezone, timedelta
 import httpx
 import jwt
 from pydantic import BaseModel
@@ -31,7 +41,19 @@ import re
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 import markdown
-from database import UserPreferences
+from database import UserPreferences, Subscription, UsageLog, is_subscription_active, can_process_request, increment_usage, get_content_retention_days
+import stripe
+
+# Import additional dependencies
+try:
+    import torch
+    import librosa
+    import moviepy.editor as mp
+    import edge_tts
+    TORCH_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Some dependencies missing: {e}")
+    TORCH_AVAILABLE = False
 
 # MLX imports for Apple Silicon optimization
 try:
@@ -108,6 +130,16 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/au
 # Edge-TTS settings (high-quality neural voices)
 PREFERRED_VOICE = os.getenv("PREFERRED_VOICE", "en-US-AriaNeural")  # High-quality edge-tts voice
 
+# Stripe settings
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "sk_test_your_secret_key")
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "pk_test_your_publishable_key")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "whsec_your_webhook_secret")
+STRIPE_MONTHLY_PRICE_ID = os.getenv("STRIPE_MONTHLY_PRICE_ID", "price_monthly_id")
+STRIPE_YEARLY_PRICE_ID = os.getenv("STRIPE_YEARLY_PRICE_ID", "price_yearly_id")
+
+# Configure Stripe
+stripe.api_key = STRIPE_SECRET_KEY
+
 print("🔊 TTS Engine: Edge-TTS (Microsoft Neural Voices) ✅")
 if MLX_AVAILABLE:
     print("🧠 Summarization: MLX (Apple Silicon Optimized) ✅")
@@ -117,6 +149,7 @@ else:
 # Debug: Print loaded values (remove in production)
 print("🔍 Debug - Loaded OAuth config:")
 print(f"   CLIENT_ID: {GOOGLE_CLIENT_ID[:20]}..." if len(GOOGLE_CLIENT_ID) > 20 else f"   CLIENT_ID: {GOOGLE_CLIENT_ID}")
+print(f"💳 Stripe configured with keys: {STRIPE_PUBLISHABLE_KEY[:20]}..." if len(STRIPE_PUBLISHABLE_KEY) > 20 else f"💳 Stripe key: {STRIPE_PUBLISHABLE_KEY}")
 print(f"   CLIENT_SECRET: {GOOGLE_CLIENT_SECRET[:10]}..." if len(GOOGLE_CLIENT_SECRET) > 10 else f"   CLIENT_SECRET: {GOOGLE_CLIENT_SECRET}")
 print(f"   REDIRECT_URI: {GOOGLE_REDIRECT_URI}")
 
@@ -185,6 +218,17 @@ class PreferencesRequest(BaseModel):
     preferred_voice: str
     voice_speed: str
     voice_pitch: str
+
+class SubscriptionRequest(BaseModel):
+    plan_type: str  # "monthly" or "yearly"
+
+class UsageStatsResponse(BaseModel):
+    tier: str
+    daily_usage: int
+    daily_limit: Optional[int] = None
+    subscription_status: str
+    subscription_end_date: Optional[datetime] = None
+    total_jobs: int
 
 class VoiceTestRequest(BaseModel):
     text: str
@@ -1517,6 +1561,11 @@ async def process_video(
     if not user:
         raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
     
+    # Check usage limits
+    can_process, limit_message = can_process_request(user)
+    if not can_process:
+        raise HTTPException(status_code=429, detail=limit_message)
+    
     # Validate file type
     valid_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.wmv', '.flv', '.webm', '.m4v']
     file_extension = Path(file.filename).suffix.lower()
@@ -1620,6 +1669,9 @@ async def process_video(
     # Start background processing
     background_tasks.add_task(process_video_background, job.id, video_path, file.filename, summary_prompt)
     
+    # Track usage
+    increment_usage(db, user, "video_process", job.id)
+    
     return {"job_id": job.id, "status": "pending", "message": "Video processing started"}
 
 @app.post("/api/process-audio/")
@@ -1633,6 +1685,11 @@ async def process_audio(
     """Process uploaded audio file and return transcription and speech"""
     if not user:
         raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    # Check usage limits
+    can_process, limit_message = can_process_request(user)
+    if not can_process:
+        raise HTTPException(status_code=429, detail=limit_message)
     
     # Validate file type - check both content type and file extension
     valid_extensions = ['.mp3', '.wav', '.m4a', '.flac', '.ogg', '.aac', '.wma']
@@ -1739,6 +1796,9 @@ async def process_audio(
     # Start background processing
     background_tasks.add_task(process_audio_background, job.id, audio_path, file.filename, summary_prompt)
     
+    # Track usage
+    increment_usage(db, user, "audio_process", job.id)
+    
     return {"job_id": job.id, "status": "pending", "message": "Audio processing started"}
 
 @app.post("/api/process-video-url/")
@@ -1751,6 +1811,11 @@ async def process_video_url(
     """Process video from supported platforms (YouTube, Vimeo, etc.) using yt-dlp"""
     if not user:
         raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    # Check usage limits
+    can_process, limit_message = can_process_request(user)
+    if not can_process:
+        raise HTTPException(status_code=429, detail=limit_message)
     
     # Validate video URL or YouTube video ID
     if not is_valid_video_url_or_id(request.url):
@@ -1978,6 +2043,11 @@ async def process_transcript_url(
     if not user:
         raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
     
+    # Check usage limits
+    can_process, limit_message = can_process_request(user)
+    if not can_process:
+        raise HTTPException(status_code=429, detail=limit_message)
+    
     try:
         # Fetch the webpage content
         async with httpx.AsyncClient() as client:
@@ -2106,6 +2176,11 @@ async def process_transcript_file(
     if not user:
         raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
     
+    # Check usage limits
+    can_process, limit_message = can_process_request(user)
+    if not can_process:
+        raise HTTPException(status_code=429, detail=limit_message)
+    
     # Validate file type
     allowed_extensions = ['.txt', '.doc', '.docx', '.pdf']
     file_extension = os.path.splitext(file.filename)[1].lower()
@@ -2204,12 +2279,275 @@ async def process_transcript_file(
             custom_prompt
         )
         
+        # Track usage
+        increment_usage(db, user, "transcript_process", job.id)
+        
         return {"job_id": job.id, "status": "pending", "message": "Transcript file processing started"}
         
     except UnicodeDecodeError:
         raise HTTPException(status_code=400, detail="File encoding not supported. Please save as UTF-8 text file.")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to process transcript file: {str(e)}")
+
+# Subscription and Payment Endpoints
+
+@app.get("/api/usage-stats")
+async def get_usage_stats(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get user usage statistics and subscription info"""
+    if not user:
+        raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    # Get total jobs count
+    total_jobs = db.query(Job).filter(Job.user_id == user.id).count()
+    
+    # Reset daily usage if needed
+    today = datetime.now(timezone.utc).date()
+    reset_date = user.daily_usage_reset_date.date() if user.daily_usage_reset_date else today
+    if reset_date < today:
+        user.daily_usage_count = 0
+        user.daily_usage_reset_date = datetime.now(timezone.utc)
+        db.commit()
+    
+    return UsageStatsResponse(
+        tier=user.subscription_tier,
+        daily_usage=user.daily_usage_count,
+        daily_limit=5 if user.subscription_tier == "free" else None,
+        subscription_status=user.subscription_status,
+        subscription_end_date=user.subscription_end_date,
+        total_jobs=total_jobs
+    )
+
+@app.post("/api/create-checkout-session")
+async def create_checkout_session(
+    request: SubscriptionRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create Stripe checkout session for subscription"""
+    if not user:
+        raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    try:
+        # Get or create Stripe customer
+        stripe_customer_id = user.stripe_customer_id
+        if not stripe_customer_id:
+            customer = stripe.Customer.create(
+                email=user.email,
+                name=user.name,
+                metadata={'user_id': user.id}
+            )
+            stripe_customer_id = customer.id
+            user.stripe_customer_id = stripe_customer_id
+            db.commit()
+        
+        # Get price ID based on plan type
+        price_id = STRIPE_MONTHLY_PRICE_ID if request.plan_type == "monthly" else STRIPE_YEARLY_PRICE_ID
+        
+        # Create checkout session
+        checkout_session = stripe.checkout.Session.create(
+            customer=stripe_customer_id,
+            payment_method_types=['card'],
+            line_items=[{
+                'price': price_id,
+                'quantity': 1,
+            }],
+            mode='subscription',
+            success_url=f"http://localhost:8000/subscription-success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url="http://localhost:8000/dashboard",
+            metadata={
+                'user_id': user.id,
+                'plan_type': request.plan_type
+            }
+        )
+        
+        return {"checkout_url": checkout_session.url}
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to create checkout session: {str(e)}")
+
+@app.post("/api/cancel-subscription")
+async def cancel_subscription(request: Request, db: Session = Depends(get_db)):
+    """Cancel user's subscription"""
+    auth_header = request.headers.get('authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+    
+    user_email = auth_header.split(' ')[1]
+    user = db.query(User).filter(User.email == user_email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Find active subscription
+    subscription = db.query(Subscription).filter(
+        Subscription.user_id == user.id,
+        Subscription.status == 'active'
+    ).first()
+    
+    if not subscription or not subscription.stripe_subscription_id:
+        raise HTTPException(status_code=404, detail="No active subscription found")
+    
+    try:
+        # Cancel the subscription in Stripe
+        stripe.Subscription.modify(
+            subscription.stripe_subscription_id,
+            cancel_at_period_end=True
+        )
+        
+        # Update local status (but keep active until period ends)
+        subscription.status = 'cancel_at_period_end'
+        db.commit()
+        
+        return {"message": "Subscription will be cancelled at the end of the current billing period"}
+        
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/stripe-webhook")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    """Handle Stripe webhook events"""
+    payload = await request.body()
+    sig_header = request.headers.get('stripe-signature')
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, STRIPE_WEBHOOK_SECRET
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    # Handle the event
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        await handle_successful_payment(session, db)
+    elif event['type'] == 'invoice.payment_succeeded':
+        invoice = event['data']['object']
+        await handle_successful_payment_renewal(invoice, db)
+    elif event['type'] == 'customer.subscription.deleted':
+        subscription = event['data']['object']
+        await handle_subscription_cancellation(subscription, db)
+
+    return {"status": "success"}
+
+async def handle_successful_payment(session, db: Session):
+    """Handle successful payment from Stripe"""
+    user_id = session['metadata']['user_id']
+    plan_type = session['metadata']['plan_type']
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return
+    
+    # Get subscription details from Stripe
+    subscription_id = session['subscription']
+    stripe_subscription = stripe.Subscription.retrieve(subscription_id)
+    
+    # Update user subscription status
+    user.subscription_tier = "paid"
+    user.subscription_status = "active"
+    user.subscription_start_date = datetime.fromtimestamp(stripe_subscription['current_period_start'], timezone.utc)
+    user.subscription_end_date = datetime.fromtimestamp(stripe_subscription['current_period_end'], timezone.utc)
+    
+    # Create subscription record
+    subscription = Subscription(
+        user_id=user.id,
+        stripe_subscription_id=subscription_id,
+        stripe_price_id=stripe_subscription['items']['data'][0]['price']['id'],
+        plan_type=plan_type,
+        amount=stripe_subscription['items']['data'][0]['price']['unit_amount'] / 100,  # Convert from cents
+        status=stripe_subscription['status'],
+        current_period_start=datetime.fromtimestamp(stripe_subscription['current_period_start'], timezone.utc),
+        current_period_end=datetime.fromtimestamp(stripe_subscription['current_period_end'], timezone.utc)
+    )
+    
+    db.add(subscription)
+    db.commit()
+
+async def handle_successful_payment_renewal(invoice, db: Session):
+    """Handle successful payment renewal"""
+    subscription_id = invoice['subscription']
+    
+    # Update subscription record
+    subscription = db.query(Subscription).filter(
+        Subscription.stripe_subscription_id == subscription_id
+    ).first()
+    
+    if subscription:
+        stripe_subscription = stripe.Subscription.retrieve(subscription_id)
+        subscription.current_period_start = datetime.fromtimestamp(stripe_subscription['current_period_start'], timezone.utc)
+        subscription.current_period_end = datetime.fromtimestamp(stripe_subscription['current_period_end'], timezone.utc)
+        subscription.status = stripe_subscription['status']
+        
+        # Update user
+        user = db.query(User).filter(User.id == subscription.user_id).first()
+        if user:
+            user.subscription_end_date = subscription.current_period_end
+            user.subscription_status = "active"
+        
+        db.commit()
+
+async def handle_subscription_cancellation(stripe_subscription, db: Session):
+    """Handle subscription cancellation"""
+    subscription_id = stripe_subscription['id']
+    
+    # Update subscription record
+    subscription = db.query(Subscription).filter(
+        Subscription.stripe_subscription_id == subscription_id
+    ).first()
+    
+    if subscription:
+        subscription.status = "canceled"
+        
+        # Update user
+        user = db.query(User).filter(User.id == subscription.user_id).first()
+        if user:
+            user.subscription_status = "canceled"
+            user.subscription_tier = "free"
+        
+        db.commit()
+
+@app.post("/api/cancel-subscription")
+async def cancel_subscription(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Cancel user's subscription"""
+    if not user:
+        raise HTTPException(status_code=401, detail=AUTH_REQUIRED_MSG)
+    
+    if not is_subscription_active(user):
+        raise HTTPException(status_code=400, detail="No active subscription found")
+    
+    try:
+        # Get active subscription
+        subscription = db.query(Subscription).filter(
+            Subscription.user_id == user.id,
+            Subscription.status == "active"
+        ).first()
+        
+        if subscription:
+            # Cancel at period end in Stripe
+            stripe.Subscription.modify(
+                subscription.stripe_subscription_id,
+                cancel_at_period_end=True
+            )
+            
+            subscription.cancel_at_period_end = True
+            db.commit()
+            
+            return {"message": "Subscription will be canceled at the end of the current billing period"}
+        else:
+            raise HTTPException(status_code=400, detail="No active subscription found")
+            
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to cancel subscription: {str(e)}")
+
+@app.get("/subscription-success")
+async def subscription_success(request: Request, session_id: str, user: User = Depends(get_current_user)):
+    """Subscription success page"""
+    return templates.TemplateResponse("subscription_success.html", {
+        "request": request,
+        "user": user,
+        "session_id": session_id
+    })
 
 def load_mlx_model():
     """Load MLX model for text summarization (cached) - Apple Silicon optimized"""
