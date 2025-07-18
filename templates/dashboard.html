@@ -588,6 +588,13 @@
                                                 <i class="fas fa-magic mr-1"></i>Custom Prompt
                                             </span>
                                             {% endif %}
+                                            <!-- Copy Summary Button -->
+                                            <button onclick="copySummary('{{ job.id }}')" 
+                                                    id="copy-btn-{{ job.id }}"
+                                                    class="float-right bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded text-xs transition-colors"
+                                                    title="Copy summary to clipboard">
+                                                <i class="fas fa-copy mr-1"></i><span id="copy-text-{{ job.id }}">Copy</span>
+                                            </button>
                                         </h4>
                                         {% if job.summary_prompt %}
                                         <div class="mb-2 p-2 bg-purple-50 rounded border border-purple-200">
@@ -1631,6 +1638,99 @@
         window.addEventListener('beforeunload', () => {
             stopAllAudio();
         });
+
+        // Copy summary to clipboard
+        function copySummary(jobId) {
+            const contentDiv = document.getElementById(`content-${jobId}`);
+            const summaryElement = contentDiv.querySelector('.markdown-content');
+            const copyBtn = document.getElementById(`copy-btn-${jobId}`);
+            const copyText = document.getElementById(`copy-text-${jobId}`);
+            
+            if (!summaryElement) {
+                showErrorToast('Summary content not found', 'Copy Failed');
+                return;
+            }
+            
+            // Get the text content (removes HTML formatting)
+            const summaryText = summaryElement.innerText || summaryElement.textContent;
+            
+            // Update button state to show copying
+            copyBtn.classList.remove('bg-gray-500', 'hover:bg-gray-600');
+            copyBtn.classList.add('bg-blue-500', 'hover:bg-blue-600');
+            copyText.textContent = 'Copying...';
+            
+            // Use the modern clipboard API if available
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(summaryText)
+                    .then(() => {
+                        showSuccessToast('Summary copied to clipboard!', 'Copied');
+                        // Update button to show success
+                        copyBtn.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+                        copyBtn.classList.add('bg-green-500', 'hover:bg-green-600');
+                        copyText.textContent = 'Copied!';
+                        
+                        // Reset button after 2 seconds
+                        setTimeout(() => {
+                            copyBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
+                            copyBtn.classList.add('bg-gray-500', 'hover:bg-gray-600');
+                            copyText.textContent = 'Copy';
+                        }, 2000);
+                    })
+                    .catch(err => {
+                        console.error('Failed to copy text: ', err);
+                        // Fallback to the older method
+                        fallbackCopy(summaryText, copyBtn, copyText);
+                    });
+            } else {
+                // Fallback for older browsers
+                fallbackCopy(summaryText, copyBtn, copyText);
+            }
+        }
+
+        // Fallback copy method for older browsers
+        function fallbackCopy(text, copyBtn, copyText) {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.top = '-9999px';
+            textArea.style.left = '-9999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showSuccessToast('Summary copied to clipboard!', 'Copied');
+                    // Update button to show success
+                    copyBtn.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+                    copyBtn.classList.add('bg-green-500', 'hover:bg-green-600');
+                    copyText.textContent = 'Copied!';
+                    
+                    // Reset button after 2 seconds
+                    setTimeout(() => {
+                        copyBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
+                        copyBtn.classList.add('bg-gray-500', 'hover:bg-gray-600');
+                        copyText.textContent = 'Copy';
+                    }, 2000);
+                } else {
+                    showErrorToast('Failed to copy summary', 'Copy Failed');
+                    // Reset button on failure
+                    copyBtn.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+                    copyBtn.classList.add('bg-gray-500', 'hover:bg-gray-600');
+                    copyText.textContent = 'Copy';
+                }
+            } catch (err) {
+                console.error('Fallback copy failed: ', err);
+                showErrorToast('Copy not supported in this browser', 'Copy Failed');
+                // Reset button on failure
+                copyBtn.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+                copyBtn.classList.add('bg-gray-500', 'hover:bg-gray-600');
+                copyText.textContent = 'Copy';
+            }
+            
+            document.body.removeChild(textArea);
+        }
 
         // Auto-refresh every 30 seconds for processing jobs
         // Smart default action system
