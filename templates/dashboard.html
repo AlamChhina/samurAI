@@ -1419,6 +1419,10 @@
                 contentHeader.innerHTML = '<i class="fas fa-play mr-1 text-purple-600"></i>Playing Full Audio';
                 audioSource.src = `/download/speech/${speechFile}`;
                 audioTitle.textContent = `Full Audio`;
+            } else if (audioType === 'Original Audio') {
+                contentHeader.innerHTML = '<i class="fas fa-play mr-1 text-green-600"></i>Playing Original Audio';
+                audioSource.src = `/download/original-audio/${speechFile}`;
+                audioTitle.textContent = `Original Audio`;
             } else {
                 contentHeader.innerHTML = `<i class="fas fa-play mr-1 text-blue-600"></i>Playing ${audioType}`;
                 audioSource.src = `/download/speech/${speechFile}`;
@@ -1526,12 +1530,28 @@
                 // Inline audio player
                 const audioElement = document.getElementById(`audio-element-${jobId}`);
                 const speedControl = document.getElementById(`speed-control-${jobId}`);
-                audioElement.playbackRate = parseFloat(speedControl.value);
+                
+                if (audioElement && speedControl) {
+                    console.log(`Setting playback rate to ${speedControl.value} for job ${jobId}`);
+                    audioElement.playbackRate = parseFloat(speedControl.value);
+                } else {
+                    console.error(`Audio element or speed control not found for job ${jobId}`);
+                    console.error(`Audio element:`, audioElement);
+                    console.error(`Speed control:`, speedControl);
+                }
             } else {
                 // Modal audio player
                 const audioPlayer = document.getElementById('audio-player');
                 const speedControl = document.getElementById('speed-control');
-                audioPlayer.playbackRate = parseFloat(speedControl.value);
+                
+                if (audioPlayer && speedControl) {
+                    console.log(`Setting modal playback rate to ${speedControl.value}`);
+                    audioPlayer.playbackRate = parseFloat(speedControl.value);
+                } else {
+                    console.error(`Modal audio player or speed control not found`);
+                    console.error(`Audio player:`, audioPlayer);
+                    console.error(`Speed control:`, speedControl);
+                }
             }
         }
 
