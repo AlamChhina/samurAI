@@ -272,7 +272,8 @@
                             </button>
                         </div>
                         <p class="text-xs text-gray-500 mt-1">
-                            Supports YouTube, Vimeo, Dailymotion, Twitch, Facebook, Instagram, TikTok, Twitter/X, Reddit, and more
+                            <strong>Fully Supported:</strong> YouTube, Dailymotion, Twitch, Facebook, Instagram, TikTok, Twitter/X, Reddit<br>
+                            <strong>Limited Support:</strong> Vimeo (may require public videos due to authentication changes)
                         </p>
                     </div>
                     
@@ -1277,6 +1278,14 @@
             if (!urlRegex.test(videoInput) && !youtubeIdRegex.test(videoInput) && !videoInput.includes('.')) {
                 showErrorToast('Please enter a valid video URL', 'Invalid Format');
                 return;
+            }
+
+            // Check for Vimeo URLs and warn about potential issues
+            if (videoInput.toLowerCase().includes('vimeo.com')) {
+                const proceed = confirm('⚠️ Vimeo Detection\n\nVimeo videos may encounter authentication issues due to recent platform changes. This could result in processing failures.\n\nRecommendation: Use YouTube or other supported platforms for best results.\n\nDo you want to proceed anyway?');
+                if (!proceed) {
+                    return;
+                }
             }
 
             videoProgress.classList.remove('hidden');

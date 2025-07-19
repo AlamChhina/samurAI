@@ -517,44 +517,81 @@ async def download_video_from_url(url: str) -> Optional[tuple[str, str]]:
             # Create temporary filename
             temp_filename = f"temp_video_{uuid.uuid4().hex}"
             
-            # yt-dlp options for best quality video with audio
-            ydl_opts = {
-                'format': 'best[ext=mp4]/best',  # Prefer mp4, fallback to best available
-                'outtmpl': f'{temp_filename}.%(ext)s',
-                'quiet': False,  # Set to True to suppress output
-                'no_warnings': False,
-                'extractaudio': False,  # We want video with audio
-                'audioformat': 'mp3',
-                'embed_subs': False,
-                'writesubtitles': False,
-                'writeautomaticsub': False,
-                'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            # Try multiple configurations in order of preference
+            configs = [
+                {
+                    'name': 'Primary',
+                    'format': 'best[ext=mp4]/best',
+                    'http_headers': {
+                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
+                },
+                {
+                    'name': 'Fallback 1',
+                    'format': 'worst[ext=mp4]/worst',
+                    'http_headers': {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
+                },
+                {
+                    'name': 'Fallback 2',
+                    'format': 'best',
+                    'http_headers': {
+                        'User-Agent': 'yt-dlp/2024.01.01'
+                    }
                 }
-            }
+            ]
             
-            print(f"Downloading video from: {url}")
+            for i, config in enumerate(configs):
+                try:
+                    print(f"Attempting download with {config['name']} configuration...")
+                    
+                    # yt-dlp options for this configuration
+                    ydl_opts = {
+                        'format': config['format'],
+                        'outtmpl': f'{temp_filename}.%(ext)s',
+                        'quiet': False,
+                        'no_warnings': False,
+                        'extractaudio': False,
+                        'audioformat': 'mp3',
+                        'embed_subs': False,
+                        'writesubtitles': False,
+                        'writeautomaticsub': False,
+                        'http_headers': config['http_headers']
+                    }
+                    
+                    print(f"Downloading video from: {url}")
+                    
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        # Extract info to get the title and filename
+                        info = ydl.extract_info(url, download=False)
+                        title = info.get('title', 'Unknown')
+                        print(f"Video title: {title}")
+                        
+                        # Download the video
+                        ydl.download([url])
+                        
+                        # Find the downloaded file (yt-dlp may change the extension)
+                        import glob
+                        downloaded_files = glob.glob(f"{temp_filename}.*")
+                        
+                        if downloaded_files:
+                            downloaded_file = downloaded_files[0]
+                            print(f"✅ Downloaded with {config['name']} config: {downloaded_file}")
+                            return downloaded_file, title
+                        else:
+                            print(f"❌ No file downloaded with {config['name']} config")
+                            
+                except Exception as e:
+                    print(f"❌ {config['name']} config failed: {str(e)}")
+                    if i == len(configs) - 1:  # Last attempt
+                        raise e
+                    else:
+                        print(f"🔄 Trying next configuration...")
+                        continue
             
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                # Extract info to get the title and filename
-                info = ydl.extract_info(url, download=False)
-                title = info.get('title', 'Unknown')
-                print(f"Video title: {title}")
-                
-                # Download the video
-                ydl.download([url])
-                
-                # Find the downloaded file (yt-dlp may change the extension)
-                import glob
-                downloaded_files = glob.glob(f"{temp_filename}.*")
-                
-                if downloaded_files:
-                    downloaded_file = downloaded_files[0]
-                    print(f"Downloaded: {downloaded_file}")
-                    return downloaded_file, title
-                else:
-                    print("No file was downloaded")
-                    return None, None
+            print("❌ All download configurations failed")
+            return None, None
         
         result = await asyncio.to_thread(_download)
         return result
@@ -1694,6 +1731,24 @@ class SpeechGenerationError(VideoProcessingError):
 async def home(request: Request, user: User = Depends(get_current_user)):
     """Home page"""
     return templates.TemplateResponse("index.html", {"request": request, "user": user})
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Docker and monitoring"""
+    try:
+        # Check database connection
+        from sqlalchemy import text
+        from database import SessionLocal
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+        
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "version": "1.0.0"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Service unhealthy: {str(e)}")
 
 @app.get("/auth/google")
 async def google_auth():
