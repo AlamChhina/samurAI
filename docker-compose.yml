@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  video-audio-service:
+    build: .
+    container_name: video-audio-text-service
+    ports:
+      - "8000:8000"
+    environment:
+      # Database - mount to persisted location
+      - DATABASE_URL=sqlite:///./data/video_audio_service.db
+      
+      # Service Configuration
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=false
+      
+      # Google OAuth (set these in .env file or override here)
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      
+      # Stripe (optional)
+      - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY:-}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_ENDPOINT_SECRET=${STRIPE_ENDPOINT_SECRET:-}
+      
+    volumes:
+      # Persist database and app data
+      - ./data:/app/data
+      
+      # Persist outputs
+      - ./docker-outputs:/app/outputs
+      
+      # Optional: Mount logs directory
+      - ./docker-logs:/app/logs
+      
+      # Optional: Mount custom environment file
+      - ./.env:/app/.env:ro
+      
+    restart: unless-stopped
+    
+    # Resource limits (optional)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  default:
+    name: video-audio-service-network

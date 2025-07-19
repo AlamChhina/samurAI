@@ -1,0 +1,112 @@
+# Multi-stage Docker build for Video Audio Text Service
+# Stage 1: Build dependencies
+FROM debian:bookworm-slim AS builder
+
+# Set build arguments
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install Python and system dependencies for building Python packages
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    curl \
+    g++ \
+    gcc \
+    libasound2-dev \
+    libffi-dev \
+    libjack-jackd2-dev \
+    libpulse-dev \
+    libsndfile1-dev \
+    libssl-dev \
+    make \
+    pkg-config \
+    portaudio19-dev \
+    python3 \
+    python3-dev \
+    python3-pip \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Stage 2: Production image
+FROM debian:bookworm-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PATH="/opt/venv/bin:$PATH"
+
+# Set build arguments
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install Python and system dependencies for runtime
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    ffmpeg \
+    libasound2 \
+    libpulse0 \
+    libsndfile1 \
+    portaudio19-dev \
+    python3 \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy virtual environment from builder stage
+COPY --from=builder /opt/venv /opt/venv
+
+# Create app user for security
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Set working directory
+WORKDIR /app
+
+# Create necessary directories with proper permissions
+RUN mkdir -p /app/outputs/transcripts \
+             /app/outputs/speech \
+             /app/outputs/summaries \
+             /app/speech \
+             /app/transcripts \
+             /app/templates \
+             /app/static \
+             /app/logs && \
+    chown -R appuser:appuser /app
+
+# Copy application files
+COPY --chown=appuser:appuser async_video_service.py .
+COPY --chown=appuser:appuser database.py .
+COPY --chown=appuser:appuser templates/ ./templates/
+COPY --chown=appuser:appuser static/ ./static/
+COPY --chown=appuser:appuser .env.example .env
+
+# Copy other Python modules if they exist
+COPY --chown=appuser:appuser *.py ./
+
+# Copy startup script if it exists
+RUN if [ -f start_async_service.sh ]; then \
+        cp start_async_service.sh /app/ && \
+        chown appuser:appuser /app/start_async_service.sh && \
+        chmod +x /app/start_async_service.sh; \
+    fi
+
+# Switch to non-root user
+USER appuser
+
+# Expose the port the app runs on
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Default command
+CMD ["python3", "-m", "uvicorn", "async_video_service:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

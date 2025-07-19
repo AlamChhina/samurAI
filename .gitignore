@@ -175,6 +175,7 @@ video_audio_service.db
 outputs/
 transcripts/
 speech/
+docker-outputs/
 
 # Log files
 *.log
