@@ -1,6 +1,6 @@
 # Multi-stage Docker build for Video Audio Text Service with CUDA support
 # Stage 1: Build dependencies with CUDA
-FROM nvidia/cuda:11.8-devel-ubuntu22.04 AS builder
+FROM nvidia/cuda:12.9.1-devel-ubuntu22.04 AS builder
 
 # Set build arguments
 ARG DEBIAN_FRONTEND=noninteractive
@@ -43,7 +43,7 @@ RUN sed '/^torch/d' requirements.txt > requirements_no_torch.txt
 RUN pip install --no-cache-dir -r requirements_no_torch.txt
 
 # Stage 2: Production image with CUDA runtime
-FROM nvidia/cuda:11.8-runtime-ubuntu22.04
+FROM nvidia/cuda:12.9.1-runtime-ubuntu22.04
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
