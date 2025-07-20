@@ -2,10 +2,13 @@ version: '3.8'
 
 services:
   video-audio-service:
-    build: .
-    container_name: video-audio-text-service
+    build: 
+      context: .
+      dockerfile: Dockerfile.cuda
+    container_name: video-audio-text-service-gpu
     ports:
       - "8000:8000"
+    runtime: nvidia
     environment:
       # Database - mount to persisted location
       - DATABASE_URL=sqlite:///./data/video_audio_service.db
@@ -14,6 +17,12 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - DEBUG=false
+      
+      # GPU/CUDA Configuration
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - CUDA_VISIBLE_DEVICES=0
+      - TORCH_CUDA_ARCH_LIST="6.0;6.1;7.0;7.5;8.0;8.6+PTX"
       
       # Google OAuth (set these in .env file or override here)
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
@@ -40,27 +49,19 @@ services:
       
     restart: unless-stopped
     
-    # GPU support (uncomment for CUDA acceleration)
-    # runtime: nvidia
-    # environment:
-    #   - NVIDIA_VISIBLE_DEVICES=all
-    #   - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    
-    # Resource limits (optional)
+    # GPU resource allocation
     deploy:
       resources:
         limits:
-          cpus: '2.0'
-          memory: 4G
+          cpus: '4.0'
+          memory: 8G
         reservations:
-          cpus: '0.5'
-          memory: 1G
-        # Uncomment for GPU limits
-        # reservations:
-        #   devices:
-        #     - driver: nvidia
-        #       count: 1
-        #       capabilities: [gpu]
+          cpus: '1.0'
+          memory: 2G
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     
     # Health check
     healthcheck:
@@ -72,4 +73,4 @@ services:
 
 networks:
   default:
-    name: video-audio-service-network
+    name: video-audio-service-gpu-network

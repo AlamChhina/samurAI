@@ -152,11 +152,39 @@ STRIPE_ENDPOINT_SECRET=your_stripe_webhook_secret
 
 ## 🐳 Docker Deployment
 
+### Docker Options
+
+#### Standard Docker (CPU-only)
+```bash
+# Build and run with CPU processing
+docker-compose up --build
+```
+
+#### CUDA-Accelerated Docker (GPU)
+```bash
+# Build and run with GPU acceleration (requires NVIDIA GPU + drivers)
+docker-compose -f docker-compose.gpu.yml up --build
+```
+
+### Prerequisites for CUDA Support
+
+1. **NVIDIA GPU** with compute capability 6.0+ 
+2. **NVIDIA Docker runtime**:
+   ```bash
+   # Install nvidia-docker2
+   curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
+   curl -s -L https://nvidia.github.io/nvidia-docker/ubuntu20.04/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+   sudo apt-get update && sudo apt-get install -y nvidia-docker2
+   sudo systemctl restart docker
+   ```
+3. **CUDA drivers** installed on host system
+
 ### Docker Compose Features
 - **Multi-stage builds** for optimized images
+- **CUDA support** with GPU acceleration for AI processing
 - **Volume persistence** for database and outputs
 - **Health checks** with automatic recovery
-- **Resource limits** and management
+- **Resource limits** and GPU allocation
 - **Security hardening** with non-root user
 
 ### Volume Mounts
@@ -166,6 +194,8 @@ STRIPE_ENDPOINT_SECRET=your_stripe_webhook_secret
 - `./.env:/app/.env:ro` - Environment configuration
 
 ### Docker Commands
+
+#### CPU-only Deployment
 ```bash
 # Build custom image
 docker build -t video-audio-service .
@@ -178,9 +208,33 @@ docker-compose logs -f
 
 # Stop service
 docker-compose down
+```
 
+#### GPU-Accelerated Deployment
+```bash
+# Build CUDA image
+docker build -f Dockerfile.cuda -t video-audio-service-gpu .
+
+# Run with GPU compose
+docker-compose -f docker-compose.gpu.yml up -d --build
+
+# View GPU usage
+nvidia-smi
+
+# View logs
+docker-compose -f docker-compose.gpu.yml logs -f
+
+# Stop GPU service
+docker-compose -f docker-compose.gpu.yml down
+```
+
+#### General Commands
+```bash
 # Clean restart (removes data)
 docker-compose down -v && docker-compose up --build
+
+# Check GPU availability in container
+docker exec -it video-audio-text-service-gpu python3 -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
 ```
 
 ## 📁 File Structure
@@ -188,8 +242,10 @@ docker-compose down -v && docker-compose up --build
 ├── async_video_service.py     # Main FastAPI application
 ├── database.py               # SQLAlchemy models and database functions
 ├── edge_tts_helper.py        # Voice configuration and testing
-├── docker-compose.yml        # Docker Compose configuration
-├── Dockerfile               # Multi-stage Docker build
+├── docker-compose.yml        # Docker Compose configuration (CPU)
+├── docker-compose.gpu.yml    # Docker Compose with CUDA support
+├── Dockerfile               # Multi-stage Docker build (CPU)
+├── Dockerfile.cuda          # Multi-stage Docker build with CUDA
 ├── .dockerignore           # Docker build optimization
 ├── requirements.txt        # Python dependencies
 ├── .env.example           # Environment template
@@ -312,6 +368,15 @@ pip install -r requirements.txt --no-cache-dir
 
 ### Performance Tuning
 
+**For CUDA GPU Acceleration**:
+```bash
+# Use GPU-enabled Docker compose
+docker-compose -f docker-compose.gpu.yml up --build
+
+# Verify GPU is being used
+docker exec -it video-audio-text-service-gpu nvidia-smi
+```
+
 **For Apple Silicon**:
 ```bash
 # Install optimized PyTorch
@@ -319,10 +384,11 @@ pip install torch torchvision torchaudio
 ```
 
 **For Production**:
-- Use Docker deployment
-- Configure resource limits
+- Use Docker deployment with GPU acceleration
+- Configure resource limits and GPU allocation
 - Enable health monitoring
 - Set up log rotation
+- Monitor GPU memory usage
 
 ## 📄 License & Support
 
@@ -335,5 +401,6 @@ For issues and feature requests, please check the application logs and health en
 **Version**: 2.0  
 **Last Updated**: July 2025  
 **Docker Support**: ✅  
+**CUDA GPU Support**: ✅  
 **Apple Silicon**: ✅  
 **Production Ready**: ✅
