@@ -27,10 +27,10 @@ nano .env  # or use your preferred editor
 
 ```bash
 # Build and start the service
-docker-compose up --build
+docker compose up --build
 
 # Or run in detached mode (background)
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 The service will be available at:
@@ -42,10 +42,10 @@ The service will be available at:
 
 ```bash
 # Stop the service
-docker-compose down
+docker compose down
 
 # Stop and remove volumes (clears data)
-docker-compose down -v
+docker compose down -v
 ```
 
 ## Manual Docker Build
@@ -125,7 +125,7 @@ mkdir -p data docker-outputs docker-logs
 
 1. **Check logs**:
    ```bash
-   docker-compose logs -f
+   docker compose logs -f
    ```
 
 2. **Verify environment variables**:
@@ -156,7 +156,7 @@ sudo chown -R $USER:$USER data/
 If the service runs out of memory:
 
 1. **Increase Docker memory limits** in Docker Desktop settings
-2. **Adjust resource limits** in docker-compose.yml:
+2. **Adjust resource limits** in docker compose.yml:
    ```yaml
    deploy:
      resources:
@@ -191,7 +191,7 @@ docker exec -it video-audio-service curl http://localhost:8000/health
 For development with live reload:
 
 ```bash
-# Edit docker-compose.yml to enable debug mode
+# Edit docker compose.yml to enable debug mode
 environment:
   - DEBUG=true
 
@@ -200,7 +200,7 @@ volumes:
   - .:/app
 
 # Rebuild and run
-docker-compose up --build
+docker compose up --build
 ```
 
 ## Production Deployment
@@ -214,7 +214,7 @@ For production deployment:
 5. **Configure SSL certificates**
 6. **Set up monitoring and logging**
 
-Example production docker-compose.yml additions:
+Example production docker compose.yml additions:
 
 ```yaml
 services:
@@ -236,7 +236,7 @@ services:
 git pull
 
 # Rebuild and restart
-docker-compose up --build -d
+docker compose up --build -d
 
 # Clean up old images (optional)
 docker image prune

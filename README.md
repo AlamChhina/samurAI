@@ -59,10 +59,10 @@ A comprehensive FastAPI service that processes videos to extract audio, generate
 2. **Start with Docker Compose**:
    ```bash
    # Build and start the service
-   docker-compose up --build
+   docker compose up --build
    
    # Or run in background
-   docker-compose up -d --build
+   docker compose up -d --build
    ```
 
 3. **Access the Service**:
@@ -157,13 +157,13 @@ STRIPE_ENDPOINT_SECRET=your_stripe_webhook_secret
 #### Standard Docker (CPU-only)
 ```bash
 # Build and run with CPU processing
-docker-compose up --build
+docker compose up --build
 ```
 
 #### CUDA-Accelerated Docker (GPU)
 ```bash
 # Build and run with GPU acceleration (requires NVIDIA GPU + drivers)
-docker-compose -f docker-compose.gpu.yml up --build
+docker compose -f docker compose.gpu.yml up --build
 ```
 
 ### Prerequisites for CUDA Support
@@ -201,13 +201,13 @@ docker-compose -f docker-compose.gpu.yml up --build
 docker build -t video-audio-service .
 
 # Run with compose (recommended)
-docker-compose up -d --build
+docker compose up -d --build
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Stop service
-docker-compose down
+docker compose down
 ```
 
 #### GPU-Accelerated Deployment
@@ -216,22 +216,22 @@ docker-compose down
 docker build -f Dockerfile.cuda -t video-audio-service-gpu .
 
 # Run with GPU compose
-docker-compose -f docker-compose.gpu.yml up -d --build
+docker compose -f docker compose.gpu.yml up -d --build
 
 # View GPU usage
 nvidia-smi
 
 # View logs
-docker-compose -f docker-compose.gpu.yml logs -f
+docker compose -f docker compose.gpu.yml logs -f
 
 # Stop GPU service
-docker-compose -f docker-compose.gpu.yml down
+docker compose -f docker compose.gpu.yml down
 ```
 
 #### General Commands
 ```bash
 # Clean restart (removes data)
-docker-compose down -v && docker-compose up --build
+docker compose down -v && docker compose up --build
 
 # Check GPU availability in container
 docker exec -it video-audio-text-service-gpu python3 -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
@@ -242,8 +242,8 @@ docker exec -it video-audio-text-service-gpu python3 -c "import torch; print(f'C
 ├── async_video_service.py     # Main FastAPI application
 ├── database.py               # SQLAlchemy models and database functions
 ├── edge_tts_helper.py        # Voice configuration and testing
-├── docker-compose.yml        # Docker Compose configuration (CPU)
-├── docker-compose.gpu.yml    # Docker Compose with CUDA support
+├── docker compose.yml        # Docker Compose configuration (CPU)
+├── docker compose.gpu.yml    # Docker Compose with CUDA support
 ├── Dockerfile               # Multi-stage Docker build (CPU)
 ├── Dockerfile.cuda          # Multi-stage Docker build with CUDA
 ├── .dockerignore           # Docker build optimization
@@ -289,7 +289,7 @@ python test_video_platforms.py
 curl http://localhost:8000/health
 
 # Check Docker container health
-docker-compose ps
+docker compose ps
 ```
 
 ## 🔧 Advanced Features
@@ -346,7 +346,7 @@ docker-compose ps
 ```bash
 # Clean Docker cache
 docker system prune -a
-docker-compose down -v
+docker compose down -v
 ```
 
 **Package Installation Issues**:
@@ -371,7 +371,7 @@ pip install -r requirements.txt --no-cache-dir
 **For CUDA GPU Acceleration**:
 ```bash
 # Use GPU-enabled Docker compose
-docker-compose -f docker-compose.gpu.yml up --build
+docker compose -f docker compose.gpu.yml up --build
 
 # Verify GPU is being used
 docker exec -it video-audio-text-service-gpu nvidia-smi
