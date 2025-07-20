@@ -5,7 +5,7 @@ services:
     build: 
       context: .
       dockerfile: Dockerfile.cuda
-    container_name: video-audio-text-service-gpu
+    container_name: video-audio-text-service-cpu
     ports:
       - "8000:8000"
     environment:
@@ -17,11 +17,9 @@ services:
       - PORT=8000
       - DEBUG=false
       
-      # GPU/CUDA Configuration
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - CUDA_VISIBLE_DEVICES=0
-      - TORCH_CUDA_ARCH_LIST="6.0;6.1;7.0;7.5;8.0;8.6+PTX"
+      # Force CPU mode for macOS (no NVIDIA GPU support)
+      - CUDA_VISIBLE_DEVICES=""
+      - TORCH_DEVICE=cpu
       
       # Google OAuth (set these in .env file or override here)
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
@@ -48,7 +46,7 @@ services:
       
     restart: unless-stopped
     
-    # GPU resource allocation
+    # CPU resource allocation (no GPU on macOS)
     deploy:
       resources:
         limits:
@@ -57,10 +55,6 @@ services:
         reservations:
           cpus: '1.0'
           memory: 2G
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     
     # Health check
     healthcheck:
@@ -68,8 +62,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
 
 networks:
-  default:
-    name: video-audio-service-gpu-network
+  video-audio-service-network:
+    driver: bridge

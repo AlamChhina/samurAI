@@ -163,7 +163,7 @@ docker compose up --build
 #### CUDA-Accelerated Docker (GPU)
 ```bash
 # Build and run with GPU acceleration (requires NVIDIA GPU + drivers)
-docker compose -f docker compose.gpu.yml up --build
+docker compose -f docker-compose.gpu.yml up --build
 ```
 
 ### Prerequisites for CUDA Support
@@ -216,16 +216,16 @@ docker compose down
 docker build -f Dockerfile.cuda -t video-audio-service-gpu .
 
 # Run with GPU compose
-docker compose -f docker compose.gpu.yml up -d --build
+docker compose -f docker-compose.gpu.yml up -d --build
 
 # View GPU usage
 nvidia-smi
 
 # View logs
-docker compose -f docker compose.gpu.yml logs -f
+docker compose -f docker-compose.gpu.yml logs -f
 
 # Stop GPU service
-docker compose -f docker compose.gpu.yml down
+docker compose -f docker-compose.gpu.yml down
 ```
 
 #### General Commands
@@ -371,7 +371,7 @@ pip install -r requirements.txt --no-cache-dir
 **For CUDA GPU Acceleration**:
 ```bash
 # Use GPU-enabled Docker compose
-docker compose -f docker compose.gpu.yml up --build
+docker compose -f docker-compose.gpu.yml up --build
 
 # Verify GPU is being used
 docker exec -it video-audio-text-service-gpu nvidia-smi
