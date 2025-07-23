@@ -1025,7 +1025,7 @@ async def generate_system_tts(text: str, output_path: str) -> bool:
 
 async def text_to_speech(text: str, output_path: str) -> bool:
     """Convert text to speech using edge-tts (Microsoft Neural Voices)"""
-    print("🎵 Starting high-quality text-to-speech generation with edge-tts...")
+    print(f"🎵 Starting high-quality text-to-speech generation with edge-tts... (Input: {len(text)} characters)")
     
     # Try edge-tts with premium neural voices
     print("🎤 Using edge-tts with premium neural voices...")
@@ -2908,18 +2908,38 @@ def _create_mlx_summary(text: str, custom_prompt: Optional[str] = None) -> str:
         if model == "fallback":
             raise RuntimeError("MLX model failed to load. AI summarization requires a working MLX environment.")
         
+        # Determine appropriate input text length and max tokens based on content
+        input_length = len(text)
+        if input_length < 1000:
+            max_tokens = 150  # Short content gets shorter summary
+            input_text_limit = input_length  # Use all available text
+        elif input_length < 5000:
+            max_tokens = 300  # Medium content 
+            input_text_limit = 4000  # Use up to 4000 chars
+        elif input_length < 15000:
+            max_tokens = 500  # Longer content gets more detailed summary
+            input_text_limit = 8000  # Use up to 8000 chars for longer content
+        else:
+            max_tokens = 800  # Very long content gets comprehensive summary
+            input_text_limit = 12000  # Use up to 12000 chars for very long content
+        
+        # Truncate input text appropriately
+        input_text = text[:input_text_limit]
+        
+        print(f"📊 Input text length: {input_length} chars -> Using {len(input_text)} chars, max_tokens: {max_tokens}")
+        
         # Create prompt for summarization
         if custom_prompt:
-            prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nPlease summarize the following text based on this guidance: {custom_prompt}\n\nText to summarize:\n{text[:4000]}\n\nProvide a concise summary focusing on the key points mentioned in the guidance.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nPlease summarize the following text based on this guidance: {custom_prompt}\n\nText to summarize:\n{input_text}\n\nProvide a summary focusing on the key points mentioned in the guidance. The summary should be proportional to the content length - be concise for short content and more detailed for longer content.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
         else:
-            prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nPlease provide a concise summary of the following text, highlighting the main points and key information:\n\n{text[:4000]}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+            prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nPlease provide a summary of the following text, highlighting the main points and key information. The summary should be proportional to the content length - be concise for short content and more detailed for longer content:\n\n{input_text}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
         
         # Generate summary
         response = generate(
             model, 
             tokenizer, 
             prompt=prompt,
-            max_tokens=300
+            max_tokens=max_tokens
         )
         
         # Clean up the response
