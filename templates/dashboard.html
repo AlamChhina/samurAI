@@ -1621,8 +1621,14 @@
 
         // Keyboard shortcuts for audio player
         document.addEventListener('keydown', (e) => {
-            // Only handle shortcuts if we have a currently playing audio
-            if (currentAudio && currentJobId) {
+            // Check if user is typing in an input field, textarea, or contenteditable element
+            const isTyping = e.target.tagName === 'INPUT' || 
+                            e.target.tagName === 'TEXTAREA' || 
+                            e.target.contentEditable === 'true' ||
+                            e.target.isContentEditable;
+
+            // Only handle shortcuts if we have a currently playing audio AND user is not typing
+            if (currentAudio && currentJobId && !isTyping) {
                 switch(e.code) {
                     case 'Space':
                         e.preventDefault();
