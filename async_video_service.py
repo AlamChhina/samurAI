@@ -1356,7 +1356,7 @@ async def process_transcript_background(job_id: str, transcript_text: str, filen
             summary = _create_mlx_summary(transcript_text, summary_prompt)
         else:
             print("🧠 Generating extractive summary...")
-            summary = _create_extractive_summary(transcript_text, summary_prompt)
+            summary = _create_extractive_summary(transcript_text, custom_prompt=summary_prompt)
         
         if summary:
             # Save summary
@@ -2902,11 +2902,11 @@ def load_mlx_model():
     return mlx_model, mlx_tokenizer
 
 def _create_mlx_summary(text: str, custom_prompt: Optional[str] = None) -> str:
-    """Create summary using MLX model"""
+    """Create summary using MLX model - NO FALLBACK to extractive"""
     try:
         model, tokenizer = load_mlx_model()
         if model == "fallback":
-            return _create_extractive_summary(text)
+            raise RuntimeError("MLX model failed to load. AI summarization requires a working MLX environment.")
         
         # Create prompt for summarization
         if custom_prompt:
@@ -2933,58 +2933,63 @@ def _create_mlx_summary(text: str, custom_prompt: Optional[str] = None) -> str:
         
     except Exception as e:
         print(f"MLX summarization failed: {e}")
-        return _create_extractive_summary(text)
+        raise RuntimeError(f"MLX summarization failed: {str(e)}. Please ensure MLX is properly installed and configured.")
 
-def _create_extractive_summary(text: str, num_sentences: int = 4) -> str:
+def _create_extractive_summary(text: str, custom_prompt: Optional[str] = None, num_sentences: int = 4) -> str:
     """Create a simple extractive summary by taking key sentences"""
     sentences = [s.strip() for s in text.split('.') if s.strip() and len(s.strip()) > 20]
     
     if len(sentences) <= num_sentences:
-        return '. '.join(sentences) + '.'
+        base_summary = '. '.join(sentences) + '.'
+    else:
+        # Score sentences by length and position (favor longer sentences and earlier ones)
+        scored_sentences = []
+        for i, sentence in enumerate(sentences):
+            # Simple scoring: length + position bonus
+            score = len(sentence.split()) + (1.0 / (i + 1)) * 10
+            scored_sentences.append((score, sentence))
+        
+        # Sort by score and take top sentences
+        scored_sentences.sort(key=lambda x: x[0], reverse=True)
+        top_sentences = [sentence for _, sentence in scored_sentences[:num_sentences]]
+        
+        # Reorder sentences by their original position
+        reordered = []
+        for sentence in sentences:
+            if sentence in top_sentences:
+                reordered.append(sentence)
+        
+        base_summary = '. '.join(reordered)
+        if not base_summary.endswith('.'):
+            base_summary += '.'
     
-    # Score sentences by length and position (favor longer sentences and earlier ones)
-    scored_sentences = []
-    for i, sentence in enumerate(sentences):
-        # Simple scoring: length + position bonus
-        score = len(sentence.split()) + (1.0 / (i + 1)) * 10
-        scored_sentences.append((score, sentence))
+    # If a custom prompt is provided, add a note that extractive summarization can't fully honor it
+    if custom_prompt:
+        prompt_note = f"\n\n**Note**: This is an extractive summary. For custom prompt-based summaries, MLX or another AI model is required. Your prompt was: \"{custom_prompt}\""
+        return base_summary + prompt_note
     
-    # Sort by score and take top sentences
-    scored_sentences.sort(key=lambda x: x[0], reverse=True)
-    top_sentences = [sentence for _, sentence in scored_sentences[:num_sentences]]
-    
-    # Reorder sentences by their original position
-    reordered = []
-    for sentence in sentences:
-        if sentence in top_sentences:
-            reordered.append(sentence)
-    
-    summary = '. '.join(reordered)
-    if not summary.endswith('.'):
-        summary += '.'
-    
-    return summary
+    return base_summary
 
 async def generate_summary(text: str, custom_prompt: Optional[str] = None) -> Optional[str]:
-    """Generate a summary of the given text using MLX or extractive methods"""
+    """Generate a summary of the given text using MLX or CUDA - NO FALLBACK to extractive"""
     try:
         def _summarize():
             if MLX_AVAILABLE:
                 print("🧠 Generating summary using MLX...")
                 return _create_mlx_summary(text, custom_prompt)
             else:
-                print("📝 Generating extractive summary...")
-                return _create_extractive_summary(text)
+                print("❌ No AI summarization available (MLX/CUDA required)")
+                raise RuntimeError("AI summarization not available. Please install MLX (Apple Silicon) or CUDA (NVIDIA GPU) dependencies.")
         
         summary = await asyncio.to_thread(_summarize)
-        summary_type = "MLX" if MLX_AVAILABLE else "extractive"
+        summary_type = "MLX" if MLX_AVAILABLE else "CUDA"
         prompt_info = " with custom prompt" if custom_prompt else ""
         print(f"✅ Summary generated using {summary_type}{prompt_info} ({len(summary)} characters)")
         return summary
         
     except Exception as e:
         print(f"❌ Summary generation failed: {e}")
-        return _create_extractive_summary(text)
+        raise RuntimeError(f"AI summarization failed: {str(e)}. MLX or CUDA environment required for proper AI-powered summarization.")
 
 @app.post("/api/regenerate-summary/")
 async def regenerate_summary(
