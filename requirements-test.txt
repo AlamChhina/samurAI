@@ -1,0 +1,27 @@
+# Testing Dependencies for Video Audio Text Service
+# Install with: pip install -r requirements-test.txt
+
+# Core testing framework
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.11.0
+pytest-cov>=4.1.0
+
+# HTTP testing
+httpx>=0.25.0
+requests>=2.31.0
+
+# Additional testing utilities
+factory-boy>=3.3.0  # For creating test data
+freezegun>=1.2.0   # For mocking datetime
+responses>=0.23.0  # For mocking HTTP responses
+
+# Development tools
+black>=23.0.0      # Code formatting
+flake8>=6.0.0      # Linting
+mypy>=1.5.0        # Type checking
+coverage>=7.3.0    # Coverage reporting
+
+# Performance testing (optional)
+pytest-benchmark>=4.0.0  # For performance tests
+memory-profiler>=0.61.0  # For memory profiling
