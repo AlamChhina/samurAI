@@ -141,7 +141,6 @@ Thumbs.db
 *~
 
 # IDEs
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -248,7 +247,6 @@ yarn-error.log*
 
 # VS Code
 .vscode/settings.json
-.vscode/launch.json
 .vscode/extensions.json
 .vscode/tasks.json
 
