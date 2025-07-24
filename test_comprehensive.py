@@ -11,6 +11,7 @@ import os
 import hashlib
 import uuid
 import jwt
+import numpy as np
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -472,9 +473,19 @@ class TestAudioVideoProcessing:
     @pytest.mark.asyncio
     async def test_convert_audio_to_wav_mock(self):
         """Test audio conversion with mocked pydub"""
-        with patch('async_video_service.AudioSegment') as mock_audio_segment:
+        with patch('async_video_service.AudioSegment') as mock_audio_segment, \
+             patch('os.path.getsize', return_value=1024):
+            
             mock_audio = Mock()
             mock_audio_segment.from_file.return_value = mock_audio
+            
+            # Mock the export method to create a file
+            def mock_export(filepath, format=None):
+                # Create the expected output file
+                with open(filepath, 'wb') as f:
+                    f.write(b"fake wav audio")
+            
+            mock_audio.export.side_effect = mock_export
             
             # Create a real temp file that can be accessed
             temp_audio = tempfile.mktemp(suffix=".mp3")
@@ -487,6 +498,11 @@ class TestAudioVideoProcessing:
                 assert result is not None
                 assert result.endswith(".wav")
                 mock_audio.export.assert_called_once()
+                
+                # Clean up the created wav file
+                if result and os.path.exists(result):
+                    os.unlink(result)
+                    
             finally:
                 if os.path.exists(temp_audio):
                     os.unlink(temp_audio)
@@ -494,46 +510,59 @@ class TestAudioVideoProcessing:
     @pytest.mark.asyncio
     async def test_transcribe_audio_mock(self, temp_audio_file):
         """Test audio transcription with mocked Whisper"""
-        with patch('async_video_service.model') as mock_model, \
-             patch('async_video_service.processor') as mock_processor:
-            
-            # Mock processor
-            mock_processor.return_value = {"input_features": "fake_features"}
-            
-            # Mock model
-            mock_output = Mock()
-            mock_output.logits = "fake_logits"
+        # Create mock tensor object with shape attribute
+        mock_tensor = Mock()
+        mock_tensor.shape = (1, 80, 3000)  # Typical whisper input shape
+        mock_tensor.device = Mock()
+        mock_tensor.to = Mock(return_value=mock_tensor)
+        
+        # Create mock model output
+        mock_output = Mock()
+        mock_output.logits = Mock()
+        mock_output.to = Mock(return_value=mock_output)
+        
+        with patch('async_video_service.load_model') as mock_load_model, \
+             patch('librosa.load', return_value=(np.array([0.1, 0.2, 0.3]), 16000)), \
+             patch('torch.no_grad'), \
+             patch('torch.tensor', return_value=mock_tensor):
+
+            # Mock the load_model function to return mock processor and model
+            mock_processor = Mock()
+            mock_model = Mock()
+            mock_load_model.return_value = (mock_processor, mock_model)
+
+            # Mock processor - return tensor-like object with shape
+            mock_processor.return_value = {"input_features": mock_tensor}
+
+            # Mock model generation
             mock_model.generate.return_value = mock_output
-            
+
             # Mock decode
             mock_processor.batch_decode.return_value = ["This is a test transcription."]
-            
+
             result = await transcribe_audio(temp_audio_file)
-            
+
             assert result == "This is a test transcription."
-    
+
     @pytest.mark.asyncio
     async def test_generate_edge_tts_mock(self):
         """Test Edge TTS generation with mocked edge_tts"""
-        with patch('async_video_service.edge_tts.Communicate') as mock_communicate:
+        with patch('async_video_service.edge_tts.Communicate') as mock_communicate, \
+             patch('os.path.exists', return_value=True), \
+             patch('os.path.getsize', return_value=1024):
             mock_comm_instance = AsyncMock()
             mock_communicate.return_value = mock_comm_instance
-            
-            # Create a real temp file path
-            temp_output = tempfile.mktemp(suffix=".mp3")
-            try:
-                result = await generate_edge_tts(
-                    "Test text", temp_output, "en-US-AriaNeural"
-                )
-                
-                assert result is True
-                mock_communicate.assert_called_once_with(
-                    "Test text", "en-US-AriaNeural"
-                )
-                mock_comm_instance.save.assert_called_once_with(temp_output)
-            finally:
-                if os.path.exists(temp_output):
-                    os.unlink(temp_output)
+
+            temp_output = "/fake/path/test.mp3"
+            result = await generate_edge_tts(
+                "Test text", temp_output, "en-US-AriaNeural"
+            )
+
+            assert result is True
+            mock_communicate.assert_called_once_with(
+                "Test text", "en-US-AriaNeural"
+            )
+            mock_comm_instance.save.assert_called_once_with(temp_output)
     
     @pytest.mark.asyncio
     async def test_text_to_speech_edge_tts_available(self):
@@ -819,38 +848,40 @@ class TestBackgroundProcessing:
     @pytest.mark.asyncio
     async def test_download_video_from_url_mock(self):
         """Test video download with mocked yt-dlp"""
-        with patch('async_video_service.yt_dlp.YoutubeDL') as mock_ytdl:
+        with patch('async_video_service.yt_dlp.YoutubeDL') as mock_ytdl, \
+             patch('glob.glob', return_value=['/fake/path/temp_video_123.mp4']):
             mock_instance = Mock()
             mock_instance.extract_info.return_value = {
                 'title': 'Test Video',
                 'requested_downloads': [{'filepath': '/fake/path/video.mp4'}]
             }
             mock_ytdl.return_value.__enter__.return_value = mock_instance
-            
+
             result = await download_video_from_url("https://youtube.com/watch?v=test")
-            
+
             assert result is not None
             video_path, title = result
             assert title == "Test Video"
-            assert video_path == "/fake/path/video.mp4"
+            assert video_path == "/fake/path/temp_video_123.mp4"
     
     @pytest.mark.asyncio
     async def test_download_original_audio_from_url_mock(self):
         """Test original audio download with mocked yt-dlp"""
-        with patch('async_video_service.yt_dlp.YoutubeDL') as mock_ytdl:
+        with patch('async_video_service.yt_dlp.YoutubeDL') as mock_ytdl, \
+             patch('glob.glob', return_value=['/fake/path/temp_audio_456.mp3']):
             mock_instance = Mock()
             mock_instance.extract_info.return_value = {
                 'title': 'Test Audio',
                 'requested_downloads': [{'filepath': '/fake/path/audio.mp3'}]
             }
             mock_ytdl.return_value.__enter__.return_value = mock_instance
-            
+
             result = await download_original_audio_from_url("https://youtube.com/watch?v=test")
-            
+
             assert result is not None
             audio_path, title = result
             assert title == "Test Audio"
-            assert audio_path == "/fake/path/audio.mp3"
+            assert audio_path == "/fake/path/temp_audio_456.mp3"
     
     @pytest.mark.asyncio
     async def test_get_youtube_transcript_success(self):

@@ -40,9 +40,10 @@ from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFoun
 import markdown
 from database import UserPreferences, Subscription, is_subscription_active, can_process_request, increment_usage
 import stripe
+import jwt
 
 # JWT Configuration
-JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
+JWT_SECRET = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
 JWT_ALGORITHM = "HS256"
 
 # Import additional dependencies
@@ -51,10 +52,12 @@ try:
     import librosa
     import moviepy.editor as mp
     import edge_tts
+    from pydub import AudioSegment
     TORCH_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ Some dependencies missing: {e}")
     TORCH_AVAILABLE = False
+    AudioSegment = None
 
 # MLX imports for Apple Silicon optimization
 try:
@@ -113,7 +116,29 @@ def markdown_filter(text):
         return ""
     return markdown.markdown(text, extensions=['nl2br', 'fenced_code'])
 
+def localtime_filter(dt):
+    """Convert UTC datetime to local time"""
+    if dt is None:
+        return None
+    
+    # If datetime is timezone-aware (UTC), convert to local time
+    if dt.tzinfo is not None:
+        return dt.astimezone()  # Converts to system local timezone
+    else:
+        # If naive datetime, assume it's UTC and convert
+        return dt.replace(tzinfo=timezone.utc).astimezone()
+
+def friendly_datetime_filter(dt):
+    """Convert UTC datetime to friendly local time format"""
+    if dt is None:
+        return "Not available"
+    
+    local_dt = localtime_filter(dt)
+    return local_dt.strftime('%b %d, %Y at %I:%M %p')
+
 templates.env.filters['markdown'] = markdown_filter
+templates.env.filters['localtime'] = localtime_filter
+templates.env.filters['friendlytime'] = friendly_datetime_filter
 
 # Configuration
 MODEL_ID = "openai/whisper-base"
@@ -291,7 +316,6 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)):
     
     try:
         # Try JWT decode first
-        import jwt
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = payload.get("sub")
         email = payload.get("email")  # Also try email from JWT
@@ -737,23 +761,40 @@ async def extract_audio_from_video(video_path: str) -> Optional[str]:
         return None
 
 async def convert_audio_to_wav(audio_path: str) -> Optional[str]:
-    """Convert audio file to WAV format using moviepy"""
+    """Convert audio file to WAV format using moviepy or pydub as fallback"""
     try:
         def _convert():
             print(f"Converting audio file: {audio_path}")
             
-            # Use moviepy to convert audio
-            from moviepy.editor import AudioFileClip
-            
-            audio_clip = AudioFileClip(audio_path)
-            temp_wav_path = f"temp_audio_{uuid.uuid4().hex}.wav"
-            
-            print(f"Converting to WAV: {temp_wav_path}")
-            audio_clip.write_audiofile(temp_wav_path, verbose=False, logger=None)
-            audio_clip.close()
-            
-            print(f"Audio conversion completed. Output file size: {os.path.getsize(temp_wav_path)} bytes")
-            return temp_wav_path
+            # Try moviepy first
+            try:
+                from moviepy.editor import AudioFileClip
+                
+                audio_clip = AudioFileClip(audio_path)
+                temp_wav_path = f"temp_audio_{uuid.uuid4().hex}.wav"
+                
+                print(f"Converting to WAV: {temp_wav_path}")
+                audio_clip.write_audiofile(temp_wav_path, verbose=False, logger=None)
+                audio_clip.close()
+                
+                print(f"Audio conversion completed. Output file size: {os.path.getsize(temp_wav_path)} bytes")
+                return temp_wav_path
+                
+            except ImportError:
+                # Fallback to pydub if available
+                if AudioSegment is not None:
+                    print("MoviePy not available, trying pydub...")
+                    
+                    audio = AudioSegment.from_file(audio_path)
+                    temp_wav_path = f"temp_audio_{uuid.uuid4().hex}.wav"
+                    
+                    print(f"Converting to WAV: {temp_wav_path}")
+                    audio.export(temp_wav_path, format="wav")
+                    
+                    print(f"Audio conversion completed. Output file size: {os.path.getsize(temp_wav_path)} bytes")
+                    return temp_wav_path
+                else:
+                    raise ImportError("Neither moviepy nor pydub is available")
         
         result = await asyncio.to_thread(_convert)
         return result
@@ -1789,6 +1830,9 @@ async def health_check():
 @app.get("/auth/google")
 async def google_auth():
     """Redirect to Google OAuth"""
+    if GOOGLE_CLIENT_ID == "your-google-client-id":
+        raise HTTPException(status_code=500, detail="Google OAuth not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your .env file.")
+    
     google_auth_url = f"https://accounts.google.com/o/oauth2/auth?client_id={GOOGLE_CLIENT_ID}&redirect_uri={GOOGLE_REDIRECT_URI}&scope=openid email profile&response_type=code"
     return RedirectResponse(google_auth_url)
 
@@ -1840,9 +1884,24 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
             db.commit()
             db.refresh(user)
         
-        # In production, create proper JWT token
+        # Create proper JWT token
+        from datetime import timedelta
+        token_data = {
+            "sub": user.id,
+            "email": user.email,
+            "exp": datetime.now(timezone.utc) + timedelta(days=30)
+        }
+        access_token = jwt.encode(token_data, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        
         response = RedirectResponse("/dashboard")
-        response.set_cookie("access_token", user.email)  # Simplified for demo
+        response.set_cookie(
+            key="access_token", 
+            value=access_token,
+            httponly=True,
+            secure=False,  # Set to True in production with HTTPS
+            samesite="lax",
+            max_age=30*24*60*60  # 30 days
+        )
         return response
         
     except Exception as e:
@@ -1852,14 +1911,25 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
 async def logout():
     """Logout user"""
     response = RedirectResponse("/")
-    response.delete_cookie("access_token")
+    response.delete_cookie(
+        key="access_token",
+        httponly=True,
+        secure=False,  # Set to True in production with HTTPS
+        samesite="lax"
+    )
     return response
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def dashboard(request: Request, db: Session = Depends(get_db)):
     """User dashboard"""
+    user = await get_current_user(request, db)
     if not user:
-        return RedirectResponse("/auth/google")
+        # Instead of redirecting immediately, render a page with login option
+        return templates.TemplateResponse("index.html", {
+            "request": request, 
+            "user": None,
+            "error": "Please sign in to access your dashboard"
+        })
     
     jobs = db.query(Job).filter(Job.user_id == user.id).order_by(Job.created_at.desc()).all()
     return templates.TemplateResponse("dashboard.html", {"request": request, "user": user, "jobs": jobs})
