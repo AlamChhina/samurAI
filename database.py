@@ -114,15 +114,24 @@ def is_subscription_active(user: User) -> bool:
     if user.subscription_tier == "free":
         return False
     
-    return (user.subscription_status == "active" and 
-            user.subscription_end_date and 
-            user.subscription_end_date > datetime.now(timezone.utc))
+    if not user.subscription_end_date:
+        return False
+    
+    # Ensure both datetimes are timezone-aware for comparison
+    now = datetime.now(timezone.utc)
+    end_date = user.subscription_end_date
+    
+    # If subscription_end_date is naive, assume it's UTC
+    if end_date.tzinfo is None:
+        end_date = end_date.replace(tzinfo=timezone.utc)
+    
+    return (user.subscription_status == "active" and end_date > now)
 
 def can_process_request(user: User) -> tuple[bool, str]:
     """Check if user can process a request based on their tier and usage"""
     # Paid users have unlimited access
     if is_subscription_active(user):
-        return True, ""
+        return True, "Unlimited access"
     
     # Free users have daily limits
     today = datetime.now(timezone.utc).date()
@@ -133,10 +142,12 @@ def can_process_request(user: User) -> tuple[bool, str]:
         user.daily_usage_count = 0
         user.daily_usage_reset_date = datetime.now(timezone.utc)
     
-    if user.daily_usage_count >= 5:
+    max_daily_requests = 5
+    if user.daily_usage_count >= max_daily_requests:
         return False, "Daily limit of 5 requests reached. Upgrade to paid plan for unlimited access."
     
-    return True, ""
+    remaining = max_daily_requests - user.daily_usage_count
+    return True, f"{remaining} requests remaining today"
 
 def increment_usage(db, user: User, action_type: str, job_id: str = None):
     """Increment user usage count and log the action"""

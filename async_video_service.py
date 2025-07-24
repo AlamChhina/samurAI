@@ -3,10 +3,10 @@ import os
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Request, BackgroundTasks, Form
-from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPBearer
 import asyncio
 import platform
 import moviepy as mp
@@ -14,8 +14,6 @@ from transformers import WhisperProcessor, WhisperForConditionalGeneration
 import edge_tts
 import os
 import torch
-import tempfile
-import shutil
 from pathlib import Path
 import uuid
 import hashlib
@@ -28,25 +26,24 @@ import os
 import uuid
 import hashlib
 import shutil
-import glob
-import warnings
 import platform
 import subprocess
-import traceback
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 import httpx
-import jwt
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
-import requests
 import yt_dlp
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 import markdown
-from database import UserPreferences, Subscription, UsageLog, is_subscription_active, can_process_request, increment_usage, get_content_retention_days
+from database import UserPreferences, Subscription, is_subscription_active, can_process_request, increment_usage
 import stripe
+
+# JWT Configuration
+JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
+JWT_ALGORITHM = "HS256"
 
 # Import additional dependencies
 try:
@@ -283,18 +280,39 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)):
     if not token:
         auth_header = request.headers.get("authorization")
         if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header.split(" ")[1]
+            try:
+                token = auth_header.split(" ")[1]
+            except (IndexError, TypeError):
+                # Handle mock objects that aren't subscriptable
+                return None
     
     if not token:
         return None
     
     try:
-        # For simplicity, we're using email as token
-        # In production, use proper JWT verification
-        user = await asyncio.to_thread(lambda: db.query(User).filter(User.email == token).first())
-        return user
-    except Exception:
+        # Try JWT decode first
+        import jwt
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = payload.get("sub")
+        email = payload.get("email")  # Also try email from JWT
+        
+        if user_id:
+            user = await asyncio.to_thread(lambda: db.query(User).filter(User.id == user_id).first())
+            return user
+        elif email:
+            user = await asyncio.to_thread(lambda: db.query(User).filter(User.email == email).first())
+            return user
+    except jwt.InvalidTokenError:
         return None
+    except Exception:
+        # Fallback for simple email-based tokens (for backward compatibility)
+        try:
+            user = await asyncio.to_thread(lambda: db.query(User).filter(User.email == token).first())
+            return user
+        except Exception:
+            return None
+    
+    return None
 
 def is_valid_video_url_or_id(input_str: str) -> bool:
     """Validate if the input is a valid video URL or YouTube video ID"""
@@ -348,7 +366,25 @@ def is_valid_video_url_or_id(input_str: str) -> bool:
 
 def is_valid_youtube_url_or_id(input_str: str) -> bool:
     """Validate if the input is a valid YouTube URL or video ID (backward compatibility)"""
-    return is_valid_video_url_or_id(input_str)
+    # Check if it's a valid YouTube URL
+    youtube_url_patterns = [
+        r'(https?://)?(www\.)?(youtube|youtu|youtube-nocookie)\.(com|be)/',
+        r'(https?://)?youtu\.be/',
+        r'(https?://)?(www\.)?youtube\.com/watch\?v=',
+        r'(https?://)?(www\.)?youtube\.com/embed/',
+        r'(https?://)?(www\.)?youtube\.com/v/',
+    ]
+    
+    for pattern in youtube_url_patterns:
+        if re.search(pattern, input_str, re.IGNORECASE):
+            return True
+    
+    # Check if it's a valid YouTube video ID (11 characters, alphanumeric with - and _)
+    youtube_video_id_pattern = r'^[a-zA-Z0-9_-]{11}$'
+    if re.match(youtube_video_id_pattern, input_str.strip()):
+        return True
+    
+    return False
 
 def is_valid_youtube_url(url: str) -> bool:
     """Validate if the URL is a valid YouTube URL (backward compatibility)"""
@@ -1636,8 +1672,8 @@ def extract_video_id_from_url(url: str) -> Optional[tuple[str, str]]:
     elif 'archive.org' in url.lower():
         return 'archive', url
     else:
-        # Default to generic URL platform
-        return 'video', url
+        # Default to other platform for unrecognized URLs
+        return 'other', url
 
 def normalize_youtube_input(url_or_id: str) -> str:
     """Convert video ID to full YouTube URL or return the URL as-is"""
@@ -1679,7 +1715,7 @@ def get_youtube_transcript(url: str) -> Optional[tuple[str, str]]:
         transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US', 'en-GB'])
         
         # Combine transcript entries into single text
-        transcript_text = ' '.join([entry['text'] for entry in transcript_list])
+        transcript_text = ''.join([entry['text'] for entry in transcript_list])
         
         if not transcript_text.strip():
             print("Transcript is empty")
@@ -2889,6 +2925,11 @@ async def subscription_success(request: Request, session_id: str, user: User = D
 def load_mlx_model():
     """Load MLX model for text summarization (cached) - Apple Silicon optimized"""
     global mlx_model, mlx_tokenizer
+    
+    # Check if MLX is available
+    if not MLX_AVAILABLE:
+        return "fallback", None
+    
     if mlx_model is None and MLX_AVAILABLE:
         print("Loading MLX summarization model...")
         try:
