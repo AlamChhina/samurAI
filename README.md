@@ -1,106 +1,42 @@
-# Video Audio Text Service
+# samurAI
 
-A comprehensive FastAPI service that processes videos to extract audio, generate transcriptions using AI, and convert text back to speech. Features user authentication, job tracking, Docker support, and a modern web interface.
+samurAI is a FastAPI-based service that turns videos, URLs, and documents into useful audio and text.  
+It extracts audio, runs AI transcription, generates concise summaries, and can convert text back into natural-sounding speech.  
+The app includes user authentication, job tracking, a modern dashboard, and full Docker support for easy deployment.  
 
-## 🌟 Features
+---
 
-### Core Processing
-- 🎥 **Video Processing**: Support for MP4, MOV, AVI, MKV, WebM and more
-- 🎯 **AI Transcription**: Powered by OpenAI Whisper for accurate speech-to-text
-- 🔊 **Premium Text-to-Speech**: Microsoft Edge-TTS Neural Voices (free & high-quality)
-- 📄 **Document Processing**: PDF and text file summarization and speech conversion
-- 🎬 **YouTube Integration**: Direct URL processing with yt-dlp
-- 🌐 **Multi-Platform Support**: YouTube, Vimeo, and other video platforms
+## Features
 
-### User Experience
-- 👤 **Google OAuth Authentication**: Secure user management
-- 📊 **Modern Dashboard**: Beautiful web interface with job management
-- 📋 **Copy Functionality**: One-click summary copying with visual feedback
-- 🔗 **Clickable Links**: Job titles link directly to source URLs
-- 📈 **Usage Tracking**: Monitor processing limits and usage statistics
-- ⚡ **Real-time Updates**: Live job status and progress tracking
+- **Multi-format input** – upload local video files or provide URLs from platforms like YouTube, Vimeo, and more
+- **AI transcription** – uses OpenAI Whisper for accurate speech-to-text on long-form content
+- **Text-to-speech** – converts summaries and transcripts back into audio using Microsoft Edge-TTS neural voices  
+- **Document support** – process PDFs and plain text files for summarization and audio generation  
+- **Job dashboard** – track the status of processing jobs, view details, and download outputs from a web UI  
+- **Real-time updates** – live status for queued, running, and completed jobs  
+- **Authentication** – Google OAuth login with JWT-based sessions for protected routes and usage tracking
+- **Dockerized** – ready-to-run with Docker Compose, including optional GPU acceleration for Whisper  
+- **Health & monitoring** – health check endpoints and basic monitoring hooks for production deployments  
 
-### Technical
-- 🚀 **Async Processing**: Non-blocking background job processing
-- 💾 **SQLite Database**: Persistent storage for users, jobs, and preferences
-- 🐳 **Docker Support**: Complete containerization with Docker Compose
-- 🍎 **Apple Silicon**: Optimized for Apple MPS acceleration
-- 🔧 **Health Monitoring**: Built-in health checks and monitoring
-- 📦 **Easy Deployment**: Production-ready with resource management
+---
 
-## 🎤 Text-to-Speech Engine
+## Authentication & Access
 
-### Edge-TTS Neural Voices
-- **Engine**: Microsoft Edge-TTS (completely free)
-- **Quality**: Premium neural voices indistinguishable from human speech
-- **Languages**: 20+ voices in multiple languages and accents
-- **Performance**: Fast local processing, no API costs or limits
+samurAI uses **Google OAuth** for login and JWT tokens for authenticated API access. To run it locally or in your own environment, you'll need:
 
-### Recommended Voices by Use Case
-- 📚 **Audiobooks/Long content**: `en-US-JennyMultilingualNeural`
-- 🎥 **Video narration**: `en-US-AriaNeural` 
-- 📢 **Announcements**: `en-US-DavisNeural` (male)
-- 💼 **Professional**: `en-US-MonicaNeural`
-- 🎧 **Podcasts**: `en-US-SaraNeural`
+1. A Google Cloud project with OAuth 2.0 credentials (Web application).
+2. A configured `.env` file containing your Google client details and JWT secret.
+3. A valid redirect URI pointing to your local or deployed samurAI instance (e.g. `http://localhost:8000/auth/callback`).
 
-## 🚀 Quick Start
+Typical environment variables (names can be adjusted to match your actual code):
 
-### Option 1: Docker (Recommended)
-
-1. **Setup Environment**:
-   ```bash
-   # Copy environment template
-   cp .env.example .env
-   
-   # Edit .env with your Google OAuth credentials
-   nano .env
-   ```
-
-2. **Start with Docker Compose**:
-   ```bash
-   # Build and start the service
-   docker compose up --build
-   
-   # Or run in background
-   docker compose up -d --build
-   ```
-
-3. **Access the Service**:
-   - **Main Application**: http://localhost:8000
-   - **Dashboard**: http://localhost:8000/dashboard
-   - **API Documentation**: http://localhost:8000/docs
-   - **Health Check**: http://localhost:8000/health
-
-### Option 2: Local Development
-
-1. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Configure Environment**:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your credentials
-   ```
-
-3. **Start the Service**:
-   ```bash
-   python async_video_service.py
-   # Or use the startup script
-   ./start_async_service.sh
-   ```
-
-## 🔧 Configuration
-
-### Environment Variables (.env)
 ```bash
-# Google OAuth (Required)
+# Google OAuth
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 JWT_SECRET_KEY=your_jwt_secret
 
-# Service Configuration
+# Service configuration
 HOST=0.0.0.0
 PORT=8000
 DEBUG=false
@@ -108,299 +44,103 @@ DEBUG=false
 # Database
 DATABASE_URL=sqlite:///./data/video_audio_service.db
 
-# TTS Configuration
+# Text-to-speech
 PREFERRED_VOICE=en-US-AriaNeural
-
-# Stripe (Optional for payments)
-STRIPE_PUBLISHABLE_KEY=your_stripe_key
-STRIPE_SECRET_KEY=your_stripe_secret
-STRIPE_ENDPOINT_SECRET=your_stripe_webhook_secret
 ```
-
-### Google OAuth Setup
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select existing
-3. Enable Google+ API
-4. Create OAuth 2.0 credentials
-5. Add authorized redirect URI: `http://localhost:8000/auth/callback`
-
-## 📡 API Endpoints
-
-### Authentication
-- `GET /` - Home page
-- `GET /auth/google` - Google OAuth login
-- `GET /auth/callback` - OAuth callback
-- `GET /auth/logout` - Logout
-- `GET /dashboard` - User dashboard
-
-### Processing
-- `POST /api/process-video/` - Upload and process video
-- `POST /api/process-url/` - Process video from URL
-- `POST /api/process-transcript/` - Process text/PDF files
-- `GET /api/jobs/` - Get user's jobs
-- `GET /api/jobs/{job_id}` - Get specific job details
-- `DELETE /api/jobs/{job_id}` - Delete job
-
-### Files & Downloads
-- `GET /download/transcript/{filename}` - Download transcript
-- `GET /download/speech/{filename}` - Download speech file
-- `GET /download/original-audio/{filename}` - Download original audio
-
-### System
-- `GET /health` - Health check endpoint
-- `GET /api/usage-stats/` - User usage statistics
-
-## 🐳 Docker Deployment
-
-### Docker Options
-
-#### Standard Docker (CPU-only)
-```bash
-# Build and run with CPU processing
-docker compose up --build
-```
-
-#### CUDA-Accelerated Docker (GPU)
-```bash
-# Build and run with GPU acceleration (requires NVIDIA GPU + drivers)
-docker compose -f docker-compose.gpu.yml up --build
-```
-
-### Prerequisites for CUDA Support
-
-1. **NVIDIA GPU** with compute capability 6.0+ 
-2. **NVIDIA Docker runtime**:
-   ```bash
-   # Install nvidia-docker2
-   curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
-   curl -s -L https://nvidia.github.io/nvidia-docker/ubuntu20.04/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
-   sudo apt-get update && sudo apt-get install -y nvidia-docker2
-   sudo systemctl restart docker
-   ```
-3. **CUDA drivers** installed on host system
-
-### Docker Compose Features
-- **Multi-stage builds** for optimized images
-- **CUDA support** with GPU acceleration for AI processing
-- **Volume persistence** for database and outputs
-- **Health checks** with automatic recovery
-- **Resource limits** and GPU allocation
-- **Security hardening** with non-root user
-
-### Volume Mounts
-- `./data:/app/data` - Database and app data persistence
-- `./docker-outputs:/app/outputs` - Generated files
-- `./docker-logs:/app/logs` - Application logs
-- `./.env:/app/.env:ro` - Environment configuration
-
-### Docker Commands
-
-#### CPU-only Deployment
-```bash
-# Build custom image
-docker build -t video-audio-service .
-
-# Run with compose (recommended)
-docker compose up -d --build
-
-# View logs
-docker compose logs -f
-
-# Stop service
-docker compose down
-```
-
-#### GPU-Accelerated Deployment
-```bash
-# Build CUDA image
-docker build -f Dockerfile.cuda -t video-audio-service-gpu .
-
-# Run with GPU compose
-docker compose -f docker-compose.gpu.yml up -d --build
-
-# View GPU usage
-nvidia-smi
-
-# View logs
-docker compose -f docker-compose.gpu.yml logs -f
-
-# Stop GPU service
-docker compose -f docker-compose.gpu.yml down
-```
-
-#### General Commands
-```bash
-# Clean restart (removes data)
-docker compose down -v && docker compose up --build
-
-# Check GPU availability in container
-docker exec -it video-audio-text-service-gpu python3 -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
-```
-
-## 📁 File Structure
-```
-├── async_video_service.py     # Main FastAPI application
-├── database.py               # SQLAlchemy models and database functions
-├── edge_tts_helper.py        # Voice configuration and testing
-├── docker compose.yml        # Docker Compose configuration (CPU)
-├── docker compose.gpu.yml    # Docker Compose with CUDA support
-├── Dockerfile               # Multi-stage Docker build (CPU)
-├── Dockerfile.cuda          # Multi-stage Docker build with CUDA
-├── .dockerignore           # Docker build optimization
-├── requirements.txt        # Python dependencies
-├── .env.example           # Environment template
-├── templates/             # Jinja2 HTML templates
-│   ├── index.html        # Home page
-│   ├── dashboard.html    # User dashboard
-│   └── profile.html      # User profile
-├── static/               # CSS and JavaScript
-│   └── style.css        # Application styles
-├── data/                # Persistent database storage
-├── outputs/             # Generated files
-│   ├── transcripts/     # Text transcriptions
-│   ├── speech/         # Generated speech files
-│   └── summaries/      # AI-generated summaries
-└── docker-outputs/     # Docker volume mount for outputs
-```
-
-## 🧪 Testing & Development
-
-### Voice Testing
-```bash
-# Test available voices
-python edge_tts_helper.py
-
-# Test voice quality
-python test_voice_quality.py
-```
-
-### Service Testing
-```bash
-# Test async processing
-python test_async_service.py
-
-# Test video platforms
-python test_video_platforms.py
-```
-
-### Health Checks
-```bash
-# Check service health
-curl http://localhost:8000/health
-
-# Check Docker container health
-docker compose ps
-```
-
-## 🔧 Advanced Features
-
-### Usage Tracking & Limits
-- Built-in usage tracking per user
-- Configurable processing limits
-- Real-time usage statistics
-- Subscription management support
-
-### Error Handling
-- Comprehensive error handling for video platforms
-- Fallback download configurations
-- Graceful degradation for unsupported formats
-- User-friendly error messages
-
-### Performance Optimization
-- Async processing with background tasks
-- Efficient video processing with FFmpeg
-- Chunked text processing for long content
-- Resource-aware processing limits
-
-### Security Features
-- Google OAuth integration
-- JWT token authentication
-- Non-root Docker containers
-- Input validation and sanitization
-
-## 📈 Benefits
-
-### ✅ **Advantages**
-- **Cost Effective**: Edge-TTS is completely free
-- **High Quality**: Premium neural voices
-- **Privacy**: All processing done locally
-- **Reliable**: No API rate limits or outages
-- **Fast**: Local processing, no network delays
-- **Scalable**: Docker deployment ready
-- **Maintainable**: Clean, modern codebase
-
-### 🎯 **Use Cases**
-- Professional presentations
-- Audiobook creation
-- Video voiceovers
-- Podcast generation
-- Educational content
-- Document narration
-- Accessibility tools
-
-## 🛠 Troubleshooting
-
-### Common Issues
-
-**Docker Build Fails**:
-```bash
-# Clean Docker cache
-docker system prune -a
-docker compose down -v
-```
-
-**Package Installation Issues**:
-```bash
-# Update pip and reinstall
-pip install --upgrade pip setuptools wheel
-pip install -r requirements.txt --no-cache-dir
-```
-
-**Google OAuth Issues**:
-- Verify redirect URI in Google Cloud Console
-- Check `.env` file credentials
-- Ensure Google+ API is enabled
-
-**Video Processing Failures**:
-- Check video format compatibility
-- Verify FFmpeg installation
-- Review error logs in dashboard
-
-### Performance Tuning
-
-**For CUDA GPU Acceleration**:
-```bash
-# Use GPU-enabled Docker compose
-docker compose -f docker-compose.gpu.yml up --build
-
-# Verify GPU is being used
-docker exec -it video-audio-text-service-gpu nvidia-smi
-```
-
-**For Apple Silicon**:
-```bash
-# Install optimized PyTorch
-pip install torch torchvision torchaudio
-```
-
-**For Production**:
-- Use Docker deployment with GPU acceleration
-- Configure resource limits and GPU allocation
-- Enable health monitoring
-- Set up log rotation
-- Monitor GPU memory usage
-
-## 📄 License & Support
-
-This project is designed for educational and development purposes. For production deployment, ensure compliance with all service terms and conditions.
-
-For issues and feature requests, please check the application logs and health endpoints for diagnostic information.
 
 ---
 
-**Version**: 2.0  
-**Last Updated**: July 2025  
-**Docker Support**: ✅  
-**CUDA GPU Support**: ✅  
-**Apple Silicon**: ✅  
-**Production Ready**: ✅
+## How It Works
+
+### Sign in
+
+- Open the app in your browser.
+- Sign in with Google using the OAuth flow.
+- You'll be redirected back to the main dashboard once authenticated.
+
+### Create a job
+
+- Upload a video file or provide a URL to a supported video platform.
+- Optionally choose processing options (transcription only, summary + TTS, etc.).
+- Submit the job; it will appear in your job list with a pending status.
+
+### Processing
+
+- samurAI extracts the audio, runs Whisper transcription, and generates summaries.
+- If enabled, it then converts the text output into speech using Edge-TTS.
+- Jobs are processed asynchronously so the UI stays responsive.
+
+### Review results
+
+- Open a job from the dashboard to see its transcript, summary, and links to any generated audio files.
+- Download transcripts, audio, or other artifacts directly from the job details page.
+
+---
+
+## Tech Stack
+
+- **Backend**: FastAPI, Python
+- **AI / Processing**: OpenAI Whisper, FFmpeg, Edge-TTS neural voices
+- **Auth**: Google OAuth 2.0, JWT
+- **Database**: SQLite (with SQLAlchemy)
+- **Frontend**: HTML templates + modern dashboard (Jinja2 + static assets)
+- **Deployment**: Docker, Docker Compose (CPU and optional GPU variants)
+- **Platform Support**: Apple Silicon, NVIDIA CUDA, and standard CPU-only environments
+
+---
+
+## Running Locally
+
+### Prerequisites
+
+- Python 3.10+
+- FFmpeg installed on your system
+- A Google Cloud project with OAuth credentials
+- (Optional) Docker & Docker Compose for containerized deployment
+
+### Environment setup
+
+```bash
+# Clone the repository
+git clone https://github.com/AlamChhina/samurAI.git
+cd samurAI
+
+# Create environment file
+cp .env.example .env
+# Edit .env with your Google OAuth credentials and other settings
+```
+
+### Option 1: Local Python dev
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the service
+python async_video_service.py   # or use your project's main entrypoint
+```
+
+Then open http://localhost:8000 in your browser to access the UI and http://localhost:8000/docs for the interactive API docs.
+
+### Option 2: Docker (recommended)
+
+```bash
+# CPU-only
+docker compose up --build
+
+# Or run in the background
+docker compose up -d --build
+```
+
+For GPU acceleration (if you have an NVIDIA GPU and drivers configured):
+
+```bash
+docker compose -f docker-compose.gpu.yml up --build
+```
+
+---
+
+## Notes
+
+- samurAI is a personal / educational project and is not affiliated with or endorsed by Google, OpenAI, or Microsoft.
+- Before using in production, review service limits, API terms of use, and security best practices for your environment.
